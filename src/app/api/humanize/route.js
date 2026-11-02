@@ -7,8 +7,9 @@ import { recordActivity } from "@/lib/server/history";
 import { getDetectionProvider } from "@/lib/services/detection";
 
 export const runtime = "nodejs";
-// Long texts on a low tokens-per-minute plan are rewritten section by section and can take several minutes.
-export const maxDuration = 800;
+// Long texts on a low tokens-per-minute plan are rewritten section by section and can take a few
+// minutes. 300 s is the maximum Vercel allows on the Hobby plan (Pro allows up to 800).
+export const maxDuration = 300;
 
 export async function POST(request) {
   try {

@@ -1,4 +1,3 @@
-<<<<<<< HEAD
 # Detectly AI - AI Text Analyzer & Writing Assistant
 
 A free, transparent web app that:
@@ -79,7 +78,7 @@ tests/                      # node:test unit tests
 
 ## Installation
 
-Requires Node.js 20.9 or later.
+Requires Node.js 24.x.
 
 ```bash
 npm install
@@ -150,7 +149,7 @@ The pipeline never adds deliberate errors or invisible characters, and never loo
 
 ## Deployment
 
-**Recommended: a Node server or container** (Render, Railway, Fly.io, a VPS, Docker). The local detector uses `onnxruntime-node` (a native binary) and keeps two models (~650 MB on disk, ~1.5 GB RAM) loaded in memory. That does not fit serverless limits well.
+**Recommended: a long-running Node server** (Render, Railway, Fly.io, a VPS). The local detector uses `onnxruntime-node` (a native binary) and keeps two models (~650 MB on disk, ~1.5 GB RAM) loaded in memory. That does not fit serverless limits well.
 
 ```bash
 npm run build && npm start      # set HF_CACHE_DIR to a persistent volume to avoid re-downloads
@@ -172,6 +171,3 @@ npm run build && npm start      # set HF_CACHE_DIR to a persistent volume to avo
 - Sentence highlights are less reliable than the document score. Short human passages between AI passages can be highlighted.
 - Scanned PDFs have no text layer. Upload page images for OCR instead. OCR is English-only.
 - Rate limits are per server instance (see above).
-=======
-# AI-detection-web-app
->>>>>>> c32871a5f8a6b83d8f7402c76feb2b07ed906165
