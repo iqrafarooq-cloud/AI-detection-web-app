@@ -1,3 +1,4 @@
+<<<<<<< HEAD
 # Detectly AI - AI Text Analyzer & Writing Assistant
 
 A free, transparent web app that:
@@ -171,3 +172,6 @@ npm run build && npm start      # set HF_CACHE_DIR to a persistent volume to avo
 - Sentence highlights are less reliable than the document score. Short human passages between AI passages can be highlighted.
 - Scanned PDFs have no text layer. Upload page images for OCR instead. OCR is English-only.
 - Rate limits are per server instance (see above).
+=======
+# AI-detection-web-app
+>>>>>>> c32871a5f8a6b83d8f7402c76feb2b07ed906165
