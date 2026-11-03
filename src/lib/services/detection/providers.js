@@ -149,7 +149,7 @@ export const localProvider = {
     try {
       return await detectLocal(text);
     } catch (err) {
-      console.error("[detector] local model failed:", err?.name, err?.message?.slice(0, 200));
+      console.error("[detector] local model failed:", err);
       throw new AppError(
         "model_unavailable",
         "The AI-detection model is still loading on the server. Please try again in a minute.",

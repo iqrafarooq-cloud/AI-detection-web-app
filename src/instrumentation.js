@@ -7,7 +7,7 @@ export async function register() {
   const { warmupModels } = await import("@/lib/services/detection/local/models");
   warmupModels().then((results) => {
     const failed = results.filter((r) => r.status === "rejected");
-    if (failed.length) console.error("[detector] warm-up failed:", failed.map((f) => f.reason?.message?.slice(0, 160)));
+    if (failed.length) console.error("[detector] warm-up failed:", failed.map((f) => f.reason));
     else console.log("[detector] models ready");
   });
 }

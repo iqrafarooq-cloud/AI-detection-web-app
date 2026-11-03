@@ -151,7 +151,7 @@ export async function detectLocal(text) {
   try {
     ppl = await sentencePerplexities(analysed);
   } catch (err) {
-    console.error("[detector] perplexity model unavailable, returning score without it:", err?.message?.slice(0, 200));
+    console.error("[detector] perplexity model unavailable, returning score without it:", err);
     ppl = null;
   }
   const hasPpl = Boolean(ppl);
