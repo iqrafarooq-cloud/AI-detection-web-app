@@ -34,13 +34,6 @@ export async function analyzeText(text, cfg = config.detection) {
       message:
         "No AI-detection model is configured on this server, so no authorship estimate is shown. The writing-pattern analysis below describes style only and is not an AI detector.",
     };
-  } else if (provider.englishOnly && !looksEnglish(text)) {
-    detection = {
-      status: "unsupported_language",
-      provider: { id: provider.id, name: provider.name, url: provider.url },
-      message:
-        "The detection model was trained on English text only, so it cannot give a reliable estimate for this language. We show no score rather than an unreliable one.",
-    };
   } else if (countWords(text) < provider.minWords) {
     detection = {
       status: "too_short",
@@ -55,6 +48,10 @@ export async function analyzeText(text, cfg = config.detection) {
         provider: { id: provider.id, name: provider.name, url: provider.url },
         ...result,
       };
+      if (provider.englishOnly && !looksEnglish(text)) {
+        detection.languageWarning =
+          "This text does not look like English. The detection model was trained mostly on English, so treat this score with extra caution.";
+      }
     } catch (err) {
       detection = {
         status: "error",

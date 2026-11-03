@@ -77,10 +77,35 @@ const ENGLISH_STOPWORDS = new Set(
   )
 );
 
-/** Rough heuristic: share of words that are common English function words. */
+// Very common function words in other Latin-script languages (Spanish, French,
+// German, Italian, Portuguese, Dutch). Words that are also common in English
+// ("a", "no", "die", "in") are left out so they cannot tip the balance.
+const FOREIGN_STOPWORDS = new Set(
+  "el la los las del que y es por para con una se lo les des et est une pas du au sur der das und ist nicht ein eine mit dem von zu il che di per non della sono em os uma não het een zijn niet".split(
+    " "
+  )
+);
+
+/**
+ * Heuristic: is this text English? Used only for soft warnings, never to block.
+ * Text with few function words (resumes, bullet lists, keyword-heavy or
+ * technical documents) is treated as English unless it shows clear signs of
+ * another language: mostly non-Latin letters, or more foreign than English
+ * function words.
+ */
 export function looksEnglish(text) {
+  if (!text) return true;
+  const letters = text.match(/\p{L}/gu) || [];
+  if (!letters.length) return true;
+  const basicLatin = letters.filter((c) => /[A-Za-z]/.test(c)).length;
+  if (basicLatin / letters.length < 0.8) return false;
   const words = getWords(text).map((w) => w.toLowerCase());
-  if (words.length < 8) return /^[\x00-\x7F\s]*$/.test(text);
-  const hits = words.filter((w) => ENGLISH_STOPWORDS.has(w)).length;
-  return hits / words.length > 0.12;
+  if (words.length < 8) return true;
+  let english = 0;
+  let foreign = 0;
+  for (const w of words) {
+    if (ENGLISH_STOPWORDS.has(w)) english++;
+    else if (FOREIGN_STOPWORDS.has(w)) foreign++;
+  }
+  return foreign <= english || foreign / words.length < 0.05;
 }

@@ -1,7 +1,7 @@
 import { config } from "@/lib/config";
 import { AppError } from "@/lib/server/http";
 import { findMissingProtected } from "@/lib/analysis/preservation";
-import { countWords, looksEnglish } from "@/lib/text/stats";
+import { countWords } from "@/lib/text/stats";
 import { matchTypography } from "@/lib/text/typography";
 import { chunkText } from "@/lib/text/chunk";
 import { anthropicProvider } from "./anthropic";
@@ -85,9 +85,6 @@ export async function improveText(text, controls, { rewriteCfg = config.rewrite,
 }
 
 async function recheckScores(original, improved, scoreFn) {
-  if (!looksEnglish(original)) {
-    return { available: false, reason: "The detector only supports English, so no re-check was run." };
-  }
   if (countWords(original) < 40 || countWords(improved) < 40) {
     return { available: false, reason: "The re-check needs at least 40 words for a meaningful score." };
   }

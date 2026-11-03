@@ -8,6 +8,7 @@ import TextInputPanel from "@/components/text/TextInputPanel";
 import { Alert, Button, Card, EmptyState, SelectField, Spinner, cx } from "@/components/ui";
 import { postJson } from "@/lib/client/api";
 import { useStatus } from "@/lib/client/useStatus";
+import { usePersistentState } from "@/lib/client/usePersistentState";
 import { DRAFT_KEY, clearSession, loadSession } from "@/lib/client/files";
 import { CONTROL_OPTIONS, CUSTOM_INSTRUCTIONS_MAX, DEFAULT_CONTROLS, WRITING_STYLES } from "@/lib/services/rewrite/options";
 import ComparisonPanel from "./ComparisonPanel";
@@ -24,13 +25,13 @@ const CONTROL_LABELS = {
 
 export default function HumanizerApp() {
   const status = useStatus();
-  const [text, setText] = useState("");
-  const [controls, setControls] = useState(DEFAULT_CONTROLS);
-  const [showAdvanced, setShowAdvanced] = useState(false);
+  const [text, setText] = usePersistentState("humanizer:text", "");
+  const [controls, setControls] = usePersistentState("humanizer:controls", DEFAULT_CONTROLS);
+  const [showAdvanced, setShowAdvanced] = usePersistentState("humanizer:showAdvanced", false);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
   // Result session: the exact text that was submitted + a version history.
-  const [session, setSession] = useState(null);
+  const [session, setSession] = usePersistentState("humanizer:session", null);
   const abortRef = useRef(null);
   const maxChars = status?.limits?.humanizeMaxChars ?? 20000;
   const unavailable = status && !status.rewrite.configured;
@@ -41,12 +42,13 @@ export default function HumanizerApp() {
   useEffect(() => {
     const draft = loadSession(DRAFT_KEY);
     if (draft?.text) {
-      // eslint-disable-next-line react-hooks/set-state-in-effect
+       
       setText(draft.text);
+      setSession(null);
       clearSession(DRAFT_KEY);
     }
     return () => abortRef.current?.abort();
-  }, []);
+  }, [setText, setSession]);
 
 
   const set = (key) => (value) => setControls((c) => ({ ...c, [key]: value }));

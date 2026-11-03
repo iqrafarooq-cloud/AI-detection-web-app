@@ -7,6 +7,7 @@ import Segmented from "@/components/tools/Segmented";
 import { Alert, Button, Card, EmptyState, Spinner } from "@/components/ui";
 import { postJson } from "@/lib/client/api";
 import { useStatus } from "@/lib/client/useStatus";
+import { usePersistentState } from "@/lib/client/usePersistentState";
 import { DRAFT_KEY, clearSession, copyToClipboard, downloadTxt, loadSession } from "@/lib/client/files";
 import { DEFAULT_SUMMARY_OPTIONS, SUMMARY_FORMATS, SUMMARY_LENGTHS } from "@/lib/services/summarize/options";
 
@@ -14,11 +15,11 @@ const MIN_WORDS = 40;
 
 export default function SummarizerApp() {
   const status = useStatus();
-  const [text, setText] = useState("");
-  const [options, setOptions] = useState(DEFAULT_SUMMARY_OPTIONS);
+  const [text, setText] = usePersistentState("summarizer:text", "");
+  const [options, setOptions] = usePersistentState("summarizer:options", DEFAULT_SUMMARY_OPTIONS);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
-  const [result, setResult] = useState(null);
+  const [result, setResult] = usePersistentState("summarizer:result", null);
   const [copied, setCopied] = useState(false);
   const abortRef = useRef(null);
   const maxChars = status?.limits?.summarizeMaxChars ?? 15000;
@@ -27,12 +28,13 @@ export default function SummarizerApp() {
   useEffect(() => {
     const draft = loadSession(DRAFT_KEY);
     if (draft?.text) {
-      // eslint-disable-next-line react-hooks/set-state-in-effect
+       
       setText(draft.text);
+      setResult(null);
       clearSession(DRAFT_KEY);
     }
     return () => abortRef.current?.abort();
-  }, []);
+  }, [setText, setResult]);
 
   const set = (key) => (value) => setOptions((o) => ({ ...o, [key]: value }));
 

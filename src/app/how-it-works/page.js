@@ -182,7 +182,7 @@ export default function HowItWorksPage() {
 
         <Section id="limits" icon={AlertTriangle} title="8. Limitations">
           <ul className="list-disc space-y-2 pl-5">
-            <li><strong>English only.</strong> For other languages we show no score rather than an unreliable one.</li>
+            <li><strong>Best on English.</strong> The model was trained mostly on English. Other languages still get a score, shown with a caution note because it is less reliable.</li>
             <li><strong>At least 40 words.</strong> Short texts are refused, and results are more reliable above roughly 150 words.</li>
             <li><strong>Mixed documents.</strong> Short human passages sandwiched between AI passages can be highlighted as AI.</li>
             <li><strong>Domain shift.</strong> Casual chat, poetry, code, lists, non-native writing and heavily edited text are harder and produce more errors.</li>

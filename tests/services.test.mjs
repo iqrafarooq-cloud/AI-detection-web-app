@@ -163,19 +163,36 @@ test("pipeline runs restructure then refine, checks facts and re-checks the scor
   }
 });
 
-test("re-check is honestly skipped for non-English text", async () => {
+test("re-check also runs for non-English text", async () => {
   const { groqProvider } = await import("@/lib/services/rewrite/groq");
   const original = groqProvider.generate;
-  groqProvider.generate = async () => ({ text: "Texto final con 42%.", model: "m" });
+  const es = "Las ventas crecieron un 42% este año en todas las regiones del país y la empresa espera seguir creciendo. ".repeat(4);
+  groqProvider.generate = async () => ({ text: es, model: "m" });
   try {
-    const r = await improveText("Las ventas crecieron un 42% este año en todas las regiones del país.", DEFAULT_CONTROLS, {
+    const r = await improveText(es, DEFAULT_CONTROLS, {
       rewriteCfg: { provider: "groq", groqKey: "k", groqModel: "m" },
       scoreFn: async () => 0.5,
     });
-    assert.equal(r.recheck.available, false);
-    assert.match(r.recheck.reason, /English/);
+    assert.equal(r.recheck.available, true);
   } finally {
     groqProvider.generate = original;
+  }
+});
+
+test("detection runs for any language and warns when the text is not English", async () => {
+  const { analyzeText } = await import("@/lib/services/detection/index");
+  const { DETECTION_PROVIDERS } = await import("@/lib/services/detection/providers");
+  const provider = { id: "fake", name: "Fake", url: "", englishOnly: true, minWords: 5, isConfigured: () => true, detect: async () => ({ verdict: "uncertain", scores: { ai: 0.5, human: 0.5 } }) };
+  DETECTION_PROVIDERS.fake = provider;
+  try {
+    const es = await analyzeText("El cambio climático es uno de los problemas más urgentes de nuestro tiempo y afecta a los ecosistemas del mundo.", { provider: "fake" });
+    assert.equal(es.detection.status, "ok");
+    assert.match(es.detection.languageWarning, /English/);
+    const resume = await analyzeText("Senior Software Engineer Skills JavaScript React Node.js Python AWS Docker Experience Led development microservices architecture Improved performance APIs reduced latency Mentored junior engineers", { provider: "fake" });
+    assert.equal(resume.detection.status, "ok");
+    assert.equal(resume.detection.languageWarning, undefined);
+  } finally {
+    delete DETECTION_PROVIDERS.fake;
   }
 });
 

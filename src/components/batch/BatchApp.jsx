@@ -7,6 +7,7 @@ import DetectionSummary from "@/components/detector/DetectionSummary";
 import { Alert, Badge, Button, Card, EmptyState, Spinner, cx } from "@/components/ui";
 import { ApiError, postForm, postJson } from "@/lib/client/api";
 import { useStatus } from "@/lib/client/useStatus";
+import { usePersistentState } from "@/lib/client/usePersistentState";
 import { DRAFT_KEY, saveSession } from "@/lib/client/files";
 
 // Each file costs one extract + one analyze request. 10 files = 20 requests,
@@ -27,7 +28,6 @@ const VERDICT = {
 const BAR = { likely_ai: "bg-red-600", likely_human: "bg-emerald-600", mixed: "bg-violet-600", uncertain: "bg-amber-600" };
 const SKIPPED = {
   too_short: "Too short",
-  unsupported_language: "Not English",
   not_configured: "No detector",
   error: "Detector error",
 };
@@ -56,7 +56,8 @@ function csvCell(v) {
 export default function BatchApp() {
   const status = useStatus();
   const router = useRouter();
-  const [items, setItems] = useState([]);
+  // Kept in memory only: items hold File objects, which can't go into sessionStorage.
+  const [items, setItems] = usePersistentState("batch:items", [], { storage: false });
   const [running, setRunning] = useState(false);
   const [notice, setNotice] = useState("");
   const [expanded, setExpanded] = useState(null);
@@ -66,7 +67,16 @@ export default function BatchApp() {
   const maxBytes = status?.limits?.uploadMaxBytes ?? 4 * 1024 * 1024;
   const maxChars = status?.limits?.analyzeMaxChars ?? 50000;
 
-  useEffect(() => () => abortRef.current?.abort(), []);
+  useEffect(() => {
+    // A run that was in progress when the user left the page was aborted.
+     
+    setItems((list) =>
+      list.some((it) => ["extracting", "analyzing", "waiting"].includes(it.step))
+        ? list.map((it) => (["extracting", "analyzing", "waiting"].includes(it.step) ? { ...it, step: "cancelled" } : it))
+        : list
+    );
+    return () => abortRef.current?.abort();
+  }, [setItems]);
 
   const update = (id, patch) => setItems((list) => list.map((it) => (it.id === id ? { ...it, ...patch } : it)));
 

@@ -70,6 +70,11 @@ function Report({ d }) {
 
   return (
     <div>
+      {d.languageWarning && (
+        <Alert tone="warning" title="Score may be less reliable for this language" className="mb-5">
+          {d.languageWarning}
+        </Alert>
+      )}
       <div className="flex flex-col items-center gap-5 sm:flex-row sm:items-center">
         <Gauge value={d.scores.ai} toneClass={tone.ring} />
         <div className="w-full">
@@ -188,7 +193,6 @@ function Unavailable({ detection }) {
   const map = {
     not_configured: ["info", "No estimate available"],
     too_short: ["warning", "Text too short for a reliable score"],
-    unsupported_language: ["warning", "Language not supported by the detector"],
   };
   const [tone, title] = map[detection.status] || ["error", "Detection unavailable"];
   return (

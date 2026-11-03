@@ -31,7 +31,7 @@ const FAQ = [
   },
   {
     q: "Why do I sometimes see no AI percentage?",
-    a: "The detector was trained on English and needs at least 40 words. For shorter or non-English text we show no score at all rather than an unreliable one. Our rule-based writing-pattern analysis still runs. We never make up a number.",
+    a: "The detector needs at least 40 words; for shorter text we show no score rather than an unreliable one. It was trained mostly on English, so scores for other languages come with a caution note. Our rule-based writing-pattern analysis still runs. We never make up a number.",
   },
   {
     q: "Does the Humanizer make AI text undetectable?",

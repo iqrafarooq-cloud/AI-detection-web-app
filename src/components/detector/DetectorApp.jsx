@@ -7,6 +7,7 @@ import TextInputPanel from "@/components/text/TextInputPanel";
 import { Alert, Button, Card, EmptyState, Spinner } from "@/components/ui";
 import { postJson } from "@/lib/client/api";
 import { useStatus } from "@/lib/client/useStatus";
+import { usePersistentState } from "@/lib/client/usePersistentState";
 import { DRAFT_KEY, clearSession, loadSession, saveSession } from "@/lib/client/files";
 import DetectionSummary from "./DetectionSummary";
 import PatternReport from "./PatternReport";
@@ -14,9 +15,9 @@ import SentenceView from "./SentenceView";
 
 export default function DetectorApp() {
   const status = useStatus();
-  const [text, setText] = useState("");
-  const [result, setResult] = useState(null);
-  const [analyzedText, setAnalyzedText] = useState("");
+  const [text, setText] = usePersistentState("detector:text", "");
+  const [result, setResult] = usePersistentState("detector:result", null);
+  const [analyzedText, setAnalyzedText] = usePersistentState("detector:analyzedText", "");
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
   const abortRef = useRef(null);
@@ -26,12 +27,14 @@ export default function DetectorApp() {
     const draft = loadSession(DRAFT_KEY);
     if (draft?.text) {
       // Hydrate from the landing page hand-off once on mount.
-      // eslint-disable-next-line react-hooks/set-state-in-effect
+       
       setText(draft.text);
+      setResult(null);
+      setAnalyzedText("");
       clearSession(DRAFT_KEY);
     }
     return () => abortRef.current?.abort();
-  }, []);
+  }, [setText, setResult, setAnalyzedText]);
 
   async function analyze() {
     setError("");
@@ -90,7 +93,7 @@ export default function DetectorApp() {
               {status?.detection.configured ? (
                 <>
                   Detection by <span className="font-medium text-slate-700">{status.detection.name}</span>
-                  {status.detection.id === "local" ? " running on our server (your text is not sent to a third party)" : ""}, plus writing-pattern analysis. English only, 40+ words.
+                  {status.detection.id === "local" ? " running on our server (your text is not sent to a third party)" : ""}, plus writing-pattern analysis. Works on any language (most accurate for English), 40+ words.
                 </>
               ) : (
                 "Writing-pattern analysis only."

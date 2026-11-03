@@ -7,6 +7,7 @@ import TextInputPanel from "@/components/text/TextInputPanel";
 import { Alert, Badge, Button, Card, EmptyState, Spinner, cx } from "@/components/ui";
 import { postJson } from "@/lib/client/api";
 import { useStatus } from "@/lib/client/useStatus";
+import { usePersistentState } from "@/lib/client/usePersistentState";
 import { DRAFT_KEY, clearSession, copyToClipboard, loadSession } from "@/lib/client/files";
 import { ISSUE_TYPES, applyIssues } from "@/lib/services/grammar/shared";
 
@@ -22,12 +23,12 @@ const TYPE_STYLE = {
 
 export default function GrammarApp() {
   const status = useStatus();
-  const [text, setText] = useState("");
+  const [text, setText] = usePersistentState("grammar:text", "");
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
-  const [result, setResult] = useState(null); // { text, issues, provider }
-  const [decisions, setDecisions] = useState({}); // id -> "accepted" | "ignored"
-  const [filter, setFilter] = useState("all");
+  const [result, setResult] = usePersistentState("grammar:result", null); // { text, issues, provider }
+  const [decisions, setDecisions] = usePersistentState("grammar:decisions", {}); // id -> "accepted" | "ignored"
+  const [filter, setFilter] = usePersistentState("grammar:filter", "all");
   const [activeId, setActiveId] = useState(null);
   const [copied, setCopied] = useState(false);
   const abortRef = useRef(null);
@@ -37,12 +38,14 @@ export default function GrammarApp() {
   useEffect(() => {
     const draft = loadSession(DRAFT_KEY);
     if (draft?.text) {
-      // eslint-disable-next-line react-hooks/set-state-in-effect
+       
       setText(draft.text);
+      setResult(null);
+      setDecisions({});
       clearSession(DRAFT_KEY);
     }
     return () => abortRef.current?.abort();
-  }, []);
+  }, [setText, setResult, setDecisions]);
 
   const accepted = useMemo(() => (result ? result.issues.filter((i) => decisions[i.id] === "accepted") : []), [result, decisions]);
   const pending = useMemo(() => (result ? result.issues.filter((i) => !decisions[i.id]) : []), [result, decisions]);
