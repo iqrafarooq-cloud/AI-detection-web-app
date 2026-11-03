@@ -1,5 +1,4 @@
 // Central, server-side configuration. Never import this from client components.
-import { supabaseEnabled } from "@/lib/supabase/env";
 
 function int(name, fallback) {
   const v = Number.parseInt(process.env[name] ?? "", 10);
@@ -39,10 +38,5 @@ export const config = {
     grammarPerWindow: int("RATE_LIMIT_GRAMMAR", 10),
     summarizePerWindow: int("RATE_LIMIT_SUMMARIZE", 10),
     uploadPerWindow: int("RATE_LIMIT_UPLOAD", 20),
-    contactPerWindow: int("RATE_LIMIT_CONTACT", 3),
   },
 };
-
-export function isSupabaseConfigured() {
-  return supabaseEnabled;
-}

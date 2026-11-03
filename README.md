@@ -5,7 +5,7 @@ A free, transparent web app that:
 1. **Analyzes text** for AI-like writing patterns, with sentence-level explanations.
 2. **Improves writing** so it reads naturally, in seven styles, while keeping meaning, facts and citations.
 
-Built with Next.js 16 (App Router, JavaScript only), React 19, Tailwind CSS 4 (dark and light themes), Lucide icons, Supabase (Postgres, Auth, RLS), **Transformers.js + ONNX Runtime** (local open-source detector) and Groq or Anthropic for rewriting.
+Built with Next.js 16 (App Router, JavaScript only), React 19, Tailwind CSS 4 (dark and light themes), Lucide icons, **Transformers.js + ONNX Runtime** (local open-source detector) and Groq or Anthropic for rewriting.
 
 ## AI detection: how the score is computed
 
@@ -43,9 +43,8 @@ The models (~650 MB) download from Hugging Face on first use into `.cache/huggin
 | Humanizer (2-step pipeline + detector re-check) | `GROQ_API_KEY` (free tier) or `ANTHROPIC_API_KEY` |
 | PDF / DOC / DOCX / TXT / MD uploads | Nothing (parsed on the server, in memory) |
 | PNG / JPG / WebP uploads | Nothing (OCR with Tesseract.js in the browser; the engine loads from the jsDelivr CDN) |
-| Accounts, history, preferences, contact form | Supabase project (free tier is enough) |
 
-Usage is free for end users. API costs fall on the operator, so the app enforces fair-use rate limits and never advertises unlimited use.
+There are no accounts: every tool is open to everyone, and nothing the user submits is stored. Usage is free for end users. API costs fall on the operator, so the app enforces fair-use rate limits and never advertises unlimited use.
 
 ## Architecture
 
@@ -55,22 +54,17 @@ src/
     api/analyze             # POST: pattern analysis + configured detector
     api/humanize            # POST: rewrite via the configured LLM + preservation check
     api/extract             # POST: validated TXT/DOCX text extraction (in memory)
-    api/contact             # POST: contact form -> Supabase (insert-only RLS)
     api/status              # GET : which providers are configured (no secrets)
-    auth/callback           # PKCE code exchange (email confirm, password reset)
-    dashboard/              # Protected: profile, preferences, usage, history
-    detector/ humanizer/ compare/ about/ privacy/ contact/
-    login/ signup/ forgot-password/ reset-password/
+    api/grammar api/summarize # POST: grammar suggestions, summaries via the configured LLM
+    detector/ humanizer/ grammar/ summarizer/ batch/ compare/
+    how-it-works/ about/ privacy/
   components/               # UI (ui/, layout/, detector/, humanizer/, ...)
   lib/
     analysis/patterns.js    # Rule-based writing-pattern analysis
     analysis/preservation.js# Facts/citations preservation check
     services/detection/     # Provider registry + Sapling/GPTZero adapters
     services/rewrite/       # Provider registry + Anthropic adapter, prompt, options
-    server/                 # Validation, errors, rate limiting, history recording
-    supabase/               # Browser/server clients
-  proxy.js                  # Session refresh + optimistic route protection
-supabase/migrations/        # Schema, RLS policies, triggers, RPC
+    server/                 # Validation, errors, rate limiting
 tests/                      # node:test unit tests
 ```
 
@@ -95,27 +89,6 @@ npm run dev                  # http://localhost:3000
 
 How verdicts are derived: GPTZero's class and confidence are shown as reported. Sapling returns a single score; Detectly labels it "likely AI-like" at 0.80 or above, "likely human-like" at 0.20 or below, "mixed" when at least 25% of sentences sit at each extreme, and "uncertain" otherwise. This rule is shown in the UI next to every result.
 
-## Supabase setup
-
-1. Create a project at https://supabase.com.
-2. Apply the migration in `supabase/migrations/20261102000000_init.sql`, either by pasting it into **SQL Editor -> Run**, or with the CLI: `supabase link --project-ref <ref> && supabase db push`.
-3. **Project Settings -> API:** copy the URL and publishable (anon) key into `.env.local`.
-4. **Authentication -> URL Configuration:** set the Site URL (e.g. `http://localhost:3000`, or your production URL) and add `<site>/auth/callback` to Redirect URLs.
-5. Email confirmation is on by default. The default email templates work as-is, because links pass through `/auth/callback` (PKCE).
-
-### Schema and security
-
-| Table | Purpose | RLS |
-|---|---|---|
-| `profiles` | name and email (created by signup trigger) | own row only |
-| `user_preferences` | default style, language, **consent flags** `save_history` / `store_original_text` (both off by default) | own rows only |
-| `analysis_history` | result summary. `original_text` and sentence texts are stored only with consent | own rows only |
-| `humanization_history` | improved text and style. `original_text` is stored only with consent | own rows only |
-| `usage_tracking` | daily request counts per feature (no text) | own rows only, written through `increment_usage()` (security invoker) |
-| `contact_messages` | contact form | insert-only for anon and authenticated, no read access via API |
-
-Every user table has RLS enabled with select/insert/update/delete policies on `auth.uid()`. The app never uses the service-role key. All database calls run with the user's JWT.
-
 ## Security and privacy
 
 - API keys exist only in server code (`src/lib/config.js`, never imported by client components).
@@ -124,19 +97,18 @@ Every user table has RLS enabled with select/insert/update/delete policies on `a
 - Rate limiting per IP and route (in memory). **Note:** on serverless platforms each instance keeps its own counters. For strict global limits, back `src/lib/server/rateLimit.js` with Redis/Upstash, keeping the same interface.
 - Logs contain error codes only, never user text.
 - Security headers: `nosniff`, `X-Frame-Options: DENY`, `Referrer-Policy` and `Permissions-Policy`. `X-Powered-By` is disabled.
-- Open-redirect protection on `/auth/callback?next=`.
 
 ## Testing
 
 ```bash
 npm run lint
-npm test          # 25 unit tests (analysis, preservation, typography, providers, 2-step pipeline + re-check, validation, rate limits)
+npm test          # unit tests (analysis, preservation, typography, providers, pipelines, validation, rate limits)
 npm run build
 ```
 
-Manual and E2E checklist (verified against a production build): empty, whitespace-only, too-short and oversized input; invalid JSON and wrong content type; special characters, emoji and HTML in text; multiple paragraphs; non-English text (English phrase checks are skipped); valid and invalid DOCX, TXT, empty, oversized and unsupported uploads; rate limiting (HTTP 429 with retry time); "not configured" states for detector, humanizer, auth and contact; landing -> detector -> humanizer hand-off; compare page; mobile layout at 390px with no horizontal overflow; no browser console errors.
+Manual and E2E checklist (verified against a production build): empty, whitespace-only, too-short and oversized input; invalid JSON and wrong content type; special characters, emoji and HTML in text; multiple paragraphs; non-English text (English phrase checks are skipped); valid and invalid DOCX, TXT, empty, oversized and unsupported uploads; rate limiting (HTTP 429 with retry time); "not configured" states for detector and humanizer; landing -> detector -> humanizer hand-off; compare page; mobile layout at 390px with no horizontal overflow; no browser console errors.
 
-With keys configured, also check: a humanizer run (preservation notice shown), regenerate, undo/redo, restore original, copy, TXT/DOCX download, signup -> confirmation email -> dashboard, saving preferences, history saved only after opt-in, deleting history, and password reset.
+With keys configured, also check: a humanizer run (preservation notice shown), regenerate, undo/redo, restore original, copy, TXT/DOCX download, grammar accept/undo, summaries in every format, and a batch of several files.
 
 ## Humanizer pipeline
 
@@ -155,14 +127,13 @@ The pipeline never adds deliberate errors or invisible characters, and never loo
 npm run build && npm start      # set HF_CACHE_DIR to a persistent volume to avoid re-downloads
 ```
 
-**Vercel:** the site, auth and humanizer work, but the local detector likely exceeds the function size and memory limits. On Vercel, set `DETECTION_PROVIDER=sapling` or `gptzero`, or run the detector on a separate Node host.
+**Vercel:** the site and the LLM tools work, but the local detector likely exceeds the function size and memory limits. On Vercel, set `DETECTION_PROVIDER=sapling` or `gptzero`, or run the detector on a separate Node host.
 
 ### Vercel steps (without the local detector)
 
 1. Push the repo to GitHub and import it in Vercel. The framework (Next.js) is auto-detected.
 2. Add the environment variables from `.env.example` in **Project -> Settings -> Environment Variables**.
-3. In Supabase, add `https://<your-domain>/auth/callback` to Redirect URLs and set the Site URL.
-4. Deploy. The humanize route declares `maxDuration = 300`. On plans with lower function limits, long rewrites may time out, so lower `HUMANIZE_MAX_CHARS` accordingly.
+3. Deploy. The humanize route declares `maxDuration = 300`. On plans with lower function limits, long rewrites may time out, so lower `HUMANIZE_MAX_CHARS` accordingly.
 
 ## Known limitations
 

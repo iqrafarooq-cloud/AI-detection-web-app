@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import { config, isSupabaseConfigured } from "@/lib/config";
+import { config } from "@/lib/config";
 import { getDetectionStatus } from "@/lib/services/detection";
 import { getRewriteStatus } from "@/lib/services/rewrite";
 
@@ -10,7 +10,6 @@ export function GET() {
   return NextResponse.json({
     detection: getDetectionStatus(),
     rewrite: getRewriteStatus(),
-    auth: { configured: isSupabaseConfigured() },
     limits: {
       analyzeMaxChars: config.limits.analyzeMaxChars,
       humanizeMaxChars: config.limits.humanizeMaxChars,

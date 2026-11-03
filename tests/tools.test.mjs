@@ -63,6 +63,17 @@ test("grammar: a repeated span maps to the next occurrence in text order", () =>
   assert.equal(applyIssues(TEXT, issues), "They're going to the libary. The the cat sat. They're going home.");
 });
 
+test("grammar: deleting a phrase also removes one adjacent space", () => {
+  const text = "Furthermore, it is important to note that teams adapt. They adapt quickly indeed.";
+  const raw = JSON.stringify({
+    issues: [
+      { type: "wordiness", original: "it is important to note that", suggestion: "", explanation: "Filler." },
+      { type: "wordiness", original: "indeed", suggestion: "", explanation: "Filler." },
+    ],
+  });
+  assert.equal(applyIssues(text, parseGrammarResponse(raw, text)), "Furthermore, teams adapt. They adapt quickly.");
+});
+
 test("grammar: non-JSON model output is an error, never an empty 'no issues' result", () => {
   assert.throws(() => parseGrammarResponse("Sorry, I can't help with that.", TEXT), (e) => e instanceof AppError && e.code === "invalid_model_output");
   assert.throws(() => parseGrammarResponse('{"result":[]}', TEXT), (e) => e.code === "invalid_model_output");

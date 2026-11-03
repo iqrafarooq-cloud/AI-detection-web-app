@@ -189,9 +189,6 @@ export default function HowItWorksPage() {
             <li><strong>New models.</strong> Detectors lag behind the newest language models.</li>
             <li><strong>Uploads.</strong> Text from images is read with OCR and may contain recognition errors, so check it before analysing.</li>
           </ul>
-          <p>
-            Questions or a result that looks wrong? <Link href="/contact" className="font-medium text-brand-600 hover:underline">Tell us</Link> - we read every report.
-          </p>
         </Section>
       </div>
     </div>

@@ -1,15 +1,12 @@
 "use client";
 
 import Link from "next/link";
-import { usePathname, useRouter } from "next/navigation";
+import { usePathname } from "next/navigation";
 import { useEffect, useRef, useState } from "react";
-import { ChevronDown, Columns2, FileStack, LayoutDashboard, ListCollapse, LogOut, Menu, PenLine, ScanSearch, SpellCheck, X } from "lucide-react";
+import { ChevronDown, Columns2, FileStack, ListCollapse, Menu, PenLine, ScanSearch, SpellCheck, X } from "lucide-react";
 import { cx } from "@/components/ui";
-import { useUser } from "@/lib/client/useUser";
-import { getSupabaseBrowserClient } from "@/lib/supabase/client";
 import ThemeToggle from "./ThemeToggle";
 import { Logo } from "./Logo";
-import { AUTH_PATHS } from "./authPaths";
 
 const PRIMARY = [
   { href: "/detector", label: "AI Detector", icon: ScanSearch, description: "Estimate whether text is AI-generated" },
@@ -28,8 +25,6 @@ const INFO = [
 
 export default function Navbar() {
   const pathname = usePathname();
-  const router = useRouter();
-  const { user, enabled } = useUser();
   const [open, setOpen] = useState(false);
 
   // Close the mobile menu whenever the route changes.
@@ -46,11 +41,6 @@ export default function Navbar() {
     return () => window.removeEventListener("keydown", onKey);
   }, [open]);
 
-  async function signOut() {
-    await getSupabaseBrowserClient()?.auth.signOut();
-    router.push("/");
-    router.refresh();
-  }
 
   const linkClass = (active) =>
     cx(
@@ -58,19 +48,6 @@ export default function Navbar() {
       active ? "bg-brand-50 text-brand-700" : "text-slate-600 hover:bg-slate-100 hover:text-slate-900"
     );
 
-  // Login, signup and password pages get a focused header: logo and theme only.
-  if (AUTH_PATHS.includes(pathname)) {
-    return (
-      <header className="sticky top-0 z-40 border-b border-slate-200/70 bg-white/85 backdrop-blur-md">
-        <div className="mx-auto flex h-16 max-w-7xl items-center justify-between gap-4 px-4 sm:px-6 lg:px-8">
-          <Link href="/" className="flex shrink-0 items-center" aria-label="Detectly AI home">
-            <Logo />
-          </Link>
-          <ThemeToggle />
-        </div>
-      </header>
-    );
-  }
 
   return (
     <header className="sticky top-0 z-40 border-b border-slate-200/70 bg-white/85 backdrop-blur-md">
@@ -101,28 +78,6 @@ export default function Navbar() {
 
         <div className="hidden shrink-0 items-center gap-2 lg:flex">
           <ThemeToggle />
-          {enabled &&
-            (user ? (
-              <>
-                <Link href="/dashboard" className="inline-flex h-9 items-center gap-2 rounded-xl px-3 text-sm font-medium text-slate-700 hover:bg-slate-100">
-                  <LayoutDashboard className="size-4" aria-hidden /> <span className="hidden xl:inline">Dashboard</span>
-                  <span className="sr-only xl:hidden">Dashboard</span>
-                </Link>
-                <button type="button" onClick={signOut} className="inline-flex h-9 items-center gap-2 rounded-xl px-3 text-sm font-medium text-slate-600 hover:bg-slate-100">
-                  <LogOut className="size-4" aria-hidden /> <span className="hidden xl:inline">Sign out</span>
-                  <span className="sr-only xl:hidden">Sign out</span>
-                </button>
-              </>
-            ) : (
-              <>
-                <Link href="/login" className="inline-flex h-9 items-center whitespace-nowrap rounded-xl px-3 text-sm font-medium text-slate-700 hover:bg-slate-100">
-                  Log in
-                </Link>
-                <Link href="/signup" className="inline-flex h-9 items-center whitespace-nowrap rounded-xl bg-brand-600 px-4 text-sm font-medium text-on-accent shadow-sm hover:bg-brand-hover">
-                  Sign up<span className="hidden xl:inline">&nbsp;free</span>
-                </Link>
-              </>
-            ))}
         </div>
 
         <div className="flex items-center gap-1 lg:hidden">
@@ -174,29 +129,6 @@ export default function Navbar() {
               </li>
             ))}
           </ul>
-          {enabled && (
-            <div className="mt-3 flex gap-2 border-t border-slate-100 pt-3">
-              {user ? (
-                <>
-                  <Link href="/dashboard" className="flex h-10 flex-1 items-center justify-center rounded-xl bg-slate-100 text-sm font-medium text-slate-800">
-                    Dashboard
-                  </Link>
-                  <button type="button" onClick={signOut} className="flex h-10 flex-1 items-center justify-center rounded-xl text-sm font-medium text-slate-700 ring-1 ring-slate-200">
-                    Sign out
-                  </button>
-                </>
-              ) : (
-                <>
-                  <Link href="/login" className="flex h-10 flex-1 items-center justify-center rounded-xl text-sm font-medium text-slate-700 ring-1 ring-slate-200">
-                    Log in
-                  </Link>
-                  <Link href="/signup" className="flex h-10 flex-1 items-center justify-center rounded-xl bg-brand-600 text-sm font-medium text-on-accent">
-                    Sign up free
-                  </Link>
-                </>
-              )}
-            </div>
-          )}
         </div>
       )}
     </header>

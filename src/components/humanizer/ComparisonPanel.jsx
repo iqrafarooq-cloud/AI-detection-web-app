@@ -168,14 +168,6 @@ export default function ComparisonPanel({ session, setSession, loading, onRegene
         )}
       </Card>
       {current.recheck && <RecheckCard recheck={current.recheck} pipeline={current.pipeline} model={current.model} />}
-      {session.history?.signedIn && (
-        <p className="text-xs text-slate-500">
-          {session.history.saved ? "Saved to your history." : "Not saved - history saving is off."}{" "}
-          <Link href="/dashboard" className="font-medium text-brand-600 hover:underline">
-            Manage in dashboard
-          </Link>
-        </p>
-      )}
     </div>
   );
 }

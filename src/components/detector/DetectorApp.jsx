@@ -133,14 +133,6 @@ export default function DetectorApp() {
               <PatternReport patterns={result.patterns} />
             </div>
             <SentenceView text={analyzedText} patterns={result.patterns} detection={result.detection} />
-            {result.history?.signedIn && (
-              <p className="text-xs text-slate-500">
-                {result.history.saved ? "Saved to your history." : "Not saved - history saving is off."}{" "}
-                <Link href="/dashboard" className="font-medium text-brand-600 hover:underline">
-                  Manage in dashboard
-                </Link>
-              </p>
-            )}
             <Card className="flex flex-col items-start justify-between gap-4 p-5 sm:flex-row sm:items-center">
               <div>
                 <p className="font-medium text-slate-900">Want clearer, more natural writing?</p>

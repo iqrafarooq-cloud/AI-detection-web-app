@@ -3,7 +3,6 @@ import { config } from "@/lib/config";
 import { enforceRateLimit, handleRouteError, readJson, validateText } from "@/lib/server/http";
 import { improveText } from "@/lib/services/rewrite";
 import { sanitizeControls } from "@/lib/services/rewrite/options";
-import { recordActivity } from "@/lib/server/history";
 import { getDetectionProvider } from "@/lib/services/detection";
 
 export const runtime = "nodejs";
@@ -27,16 +26,8 @@ export async function POST(request) {
     }
     const result = await improveText(text, controls, { scoreFn });
 
-    const history = await recordActivity("humanization", ({ storeOriginal }) => ({
-      table: "humanization_history",
-      row: {
-        original_text: storeOriginal ? text : null,
-        improved_text: result.improvedText,
-        writing_style: controls.style,
-      },
-    }));
 
-    return NextResponse.json({ ...result, controls, history });
+    return NextResponse.json({ ...result, controls });
   } catch (err) {
     return handleRouteError(err, "humanize");
   }

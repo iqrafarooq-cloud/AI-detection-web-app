@@ -8,8 +8,6 @@ import TextInputPanel from "@/components/text/TextInputPanel";
 import { Alert, Button, Card, EmptyState, SelectField, Spinner, cx } from "@/components/ui";
 import { postJson } from "@/lib/client/api";
 import { useStatus } from "@/lib/client/useStatus";
-import { useUser } from "@/lib/client/useUser";
-import { getSupabaseBrowserClient } from "@/lib/supabase/client";
 import { DRAFT_KEY, clearSession, loadSession } from "@/lib/client/files";
 import { CONTROL_OPTIONS, CUSTOM_INSTRUCTIONS_MAX, DEFAULT_CONTROLS, WRITING_STYLES } from "@/lib/services/rewrite/options";
 import ComparisonPanel from "./ComparisonPanel";
@@ -26,7 +24,6 @@ const CONTROL_LABELS = {
 
 export default function HumanizerApp() {
   const status = useStatus();
-  const { user } = useUser();
   const [text, setText] = useState("");
   const [controls, setControls] = useState(DEFAULT_CONTROLS);
   const [showAdvanced, setShowAdvanced] = useState(false);
@@ -51,20 +48,6 @@ export default function HumanizerApp() {
     return () => abortRef.current?.abort();
   }, []);
 
-  // Apply the signed-in user's preferred style once.
-  const prefsLoaded = useRef(false);
-  useEffect(() => {
-    if (!user || prefsLoaded.current) return;
-    prefsLoaded.current = true;
-    getSupabaseBrowserClient()
-      ?.from("user_preferences")
-      .select("preferred_writing_style")
-      .eq("user_id", user.id)
-      .maybeSingle()
-      .then(({ data }) => {
-        if (data?.preferred_writing_style) setControls((c) => ({ ...c, style: data.preferred_writing_style }));
-      });
-  }, [user]);
 
   const set = (key) => (value) => setControls((c) => ({ ...c, [key]: value }));
 
@@ -95,9 +78,9 @@ export default function HumanizerApp() {
       setSession((prev) => {
         if (regenerate && prev) {
           const versions = [...prev.versions.slice(0, prev.pos + 1), version];
-          return { ...prev, versions, pos: versions.length - 1, history: res.history };
+          return { ...prev, versions, pos: versions.length - 1 };
         }
-        return { original: sourceText.replace(/\r\n/g, "\n"), versions: [version], pos: 0, history: res.history, provider: res.provider };
+        return { original: sourceText.replace(/\r\n/g, "\n"), versions: [version], pos: 0, provider: res.provider };
       });
       if (!regenerate) {
         requestAnimationFrame(() => document.getElementById("comparison")?.scrollIntoView({ behavior: "smooth", block: "start" }));

@@ -9,7 +9,7 @@ const FEATURES = [
   { icon: PenLine, title: "Natural rewriting", text: "Seven writing styles that improve flow and clarity without typos, tricks or invented facts." },
   { icon: SlidersHorizontal, title: "Fine-grained control", text: "Tune tone, formality, complexity, vocabulary, paragraph length, text length and English level." },
   { icon: GitCompareArrows, title: "Side-by-side compare", text: "Every change highlighted word by word, with undo, redo and one-click restore of your original." },
-  { icon: Lock, title: "Private by default", text: "Your text is processed and discarded. History is saved only if you sign in and opt in." },
+  { icon: Lock, title: "Private by default", text: "Your text is processed and discarded. No account needed, nothing is saved." },
 ];
 
 const MORE_TOOLS = [
@@ -43,7 +43,7 @@ const FAQ = [
   },
   {
     q: "Do you store my text?",
-    a: "Not by default. Text is sent to our AI providers to produce results and is not saved by Detectly. If you create an account, you can opt in to saving history and choose whether original text is included.",
+    a: "Not by default. Text is sent to our AI providers to produce results and is not saved by Detectly. There are no accounts and no saved history.",
   },
   {
     q: "Does it work with languages other than English?",

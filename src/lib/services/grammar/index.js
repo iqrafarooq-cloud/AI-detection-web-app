@@ -69,7 +69,15 @@ export function parseGrammarResponse(raw, text) {
     let start = text.indexOf(original, cursor);
     if (start === -1) start = text.indexOf(original);
     if (start === -1) continue;
-    const end = start + original.length;
+    let end = start + original.length;
+    // A deletion ("remove this phrase") also takes one adjacent space, so accepting it
+    // never leaves a double space or a space before punctuation.
+    if (!suggestion) {
+      const before = text[start - 1];
+      const after = text[end];
+      if (after === " " && (start === 0 || /\s/.test(before))) end += 1;
+      else if (before === " " && (after === undefined || /[\s.,;:!?)]/.test(after))) start -= 1;
+    }
     if (issues.some((i) => start < i.end && end > i.start)) continue;
 
     issues.push({ type, original, suggestion, explanation: clean(item.explanation, 400), start, end });
