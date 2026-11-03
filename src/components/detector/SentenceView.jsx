@@ -92,7 +92,7 @@ export default function SentenceView({ text, patterns, detection }) {
 
       {tab === "model" && listModel && (
         <div className="mt-5">
-          <p className="mb-3 text-xs text-slate-500">Per-sentence AI likelihood as reported by {detection.provider.name}. Single sentences carry little evidence on their own - read them as hints.</p>
+          <p className="mb-3 text-xs text-slate-500">Per-sentence AI likelihood as reported by the detector. Single sentences carry little evidence on their own - read them as hints.</p>
           <ol className="max-h-[560px] space-y-1.5 overflow-y-auto">
             {modelSentences.map((s, i) => (
               <li key={i} className={cx("flex items-start gap-3 rounded-lg px-3 py-2 text-sm", s.aiProbability >= 0.5 ? "bg-red-50" : "bg-slate-50")}>

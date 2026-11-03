@@ -4,7 +4,9 @@ import { enforceRateLimit, handleRouteError, readJson, validateText } from "@/li
 import { analyzeText } from "@/lib/services/detection";
 
 export const runtime = "nodejs";
-export const maxDuration = 60;
+// The first request on a fresh server instance downloads the detector models
+// (~400 MB on Vercel), which can take well over a minute.
+export const maxDuration = 300;
 
 export async function POST(request) {
   try {

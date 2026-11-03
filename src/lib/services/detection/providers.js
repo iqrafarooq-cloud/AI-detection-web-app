@@ -140,7 +140,7 @@ export const gptzeroProvider = {
 // Runs the TMR RoBERTa detector + GPT-2 perplexity on this server.
 export const localProvider = {
   id: "local",
-  name: "TMR open-source detector",
+  name: "Open-source AI detector",
   url: DETECTOR_MODEL.url,
   minWords: 40,
   englishOnly: true,
@@ -152,7 +152,7 @@ export const localProvider = {
       console.error("[detector] local model failed:", err?.name, err?.message?.slice(0, 200));
       throw new AppError(
         "model_unavailable",
-        "The detection model could not be loaded on this server (it is downloaded on first use). Please try again in a minute.",
+        "The AI-detection model is still loading on the server. Please try again in a minute.",
         503
       );
     }

@@ -92,8 +92,7 @@ export default function DetectorApp() {
             <p className="mt-1 text-sm leading-relaxed text-slate-500">
               {status?.detection.configured ? (
                 <>
-                  Detection by <span className="font-medium text-slate-700">{status.detection.name}</span>
-                  {status.detection.id === "local" ? " running on our server (your text is not sent to a third party)" : ""}, plus writing-pattern analysis. Works on any language (most accurate for English), 40+ words.
+                  {status.detection.id === "local" ? "AI detection running on our server (your text is not sent to a third party)" : <>Detection by <span className="font-medium text-slate-700">{status.detection.name}</span></>}, plus writing-pattern analysis. Works on any language (most accurate for English), 40+ words.
                 </>
               ) : (
                 "Writing-pattern analysis only."

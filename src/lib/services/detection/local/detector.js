@@ -144,8 +144,18 @@ export async function detectLocal(text) {
   );
   const windowScores = await classify(windows);
 
-  // 3) Perplexity + burstiness under GPT-2.
-  const ppl = await sentencePerplexities(analysed);
+  // 3) Perplexity + burstiness under GPT-2. These are supporting metrics only:
+  //    if GPT-2 can't be loaded (e.g. not enough disk on the host), the AI
+  //    score above is still valid, so we return it without these metrics.
+  let ppl;
+  try {
+    ppl = await sentencePerplexities(analysed);
+  } catch (err) {
+    console.error("[detector] perplexity model unavailable, returning score without it:", err?.message?.slice(0, 200));
+    ppl = null;
+  }
+  const hasPpl = Boolean(ppl);
+  ppl ??= [];
   const valid = ppl.filter(Boolean);
   const totalNll = valid.reduce((a, p) => a + p.nll, 0);
   const totalPplTokens = valid.reduce((a, p) => a + p.tokens, 0);
@@ -191,15 +201,15 @@ export async function detectLocal(text) {
       logits: chunkScores[i].logits.map((l) => round(l, 3)),
     })),
     metrics: {
-      perplexity: round(totalPplTokens ? Math.exp(totalNll / totalPplTokens) : null, 2),
-      meanSentencePerplexity: round(meanPpl, 2),
-      burstiness: round(sdPpl, 2),
-      burstinessRatio: round(meanPpl ? sdPpl / meanPpl : null, 3),
+      perplexity: hasPpl ? round(totalPplTokens ? Math.exp(totalNll / totalPplTokens) : null, 2) : null,
+      meanSentencePerplexity: hasPpl ? round(meanPpl, 2) : null,
+      burstiness: hasPpl ? round(sdPpl, 2) : null,
+      burstinessRatio: hasPpl ? round(meanPpl ? sdPpl / meanPpl : null, 3) : null,
       tokensScored: totalTokens,
     },
     models: {
       detector: { id: DETECTOR_MODEL.id, name: DETECTOR_MODEL.name, url: DETECTOR_MODEL.url, benchmark: DETECTOR_MODEL.benchmark },
-      perplexity: { id: PERPLEXITY_MODEL.id, name: PERPLEXITY_MODEL.name, url: PERPLEXITY_MODEL.url },
+      perplexity: hasPpl ? { id: PERPLEXITY_MODEL.id, name: PERPLEXITY_MODEL.name, url: PERPLEXITY_MODEL.url } : null,
     },
     thresholds: THRESHOLDS,
     elapsedMs: Date.now() - started,

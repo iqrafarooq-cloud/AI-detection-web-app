@@ -26,11 +26,6 @@ export default function DetectionSummary({ detection, disclaimer }) {
     <Card className="p-6">
       <div className="flex items-center justify-between gap-3">
         <h2 className="text-lg font-semibold text-slate-900">AI-detection report</h2>
-        {detection.provider && (
-          <a href={detection.provider.url} target="_blank" rel="noopener noreferrer" className="inline-flex items-center gap-1 text-xs font-medium text-slate-500 hover:text-brand-600">
-            {detection.provider.name} <ExternalLink className="size-3" aria-hidden />
-          </a>
-        )}
       </div>
       <div className="mt-5">{detection.status === "ok" ? <Report d={detection} /> : <Unavailable detection={detection} />}</div>
       <p className="mt-6 border-t border-slate-100 pt-4 text-xs leading-relaxed text-slate-500">
@@ -104,9 +99,13 @@ function Report({ d }) {
       </div>
 
       {d.metrics && (
-        <dl className="mt-6 grid grid-cols-2 gap-3 sm:grid-cols-4">
-          <Metric label="Perplexity" value={d.metrics.perplexity} help="How predictable the text is to GPT-2 (lower = more predictable). AI text is often more predictable." />
-          <Metric label="Burstiness" value={d.metrics.burstiness} help="Standard deviation of sentence perplexity. Human writing usually varies more from sentence to sentence." />
+        <dl className={cx("mt-6 grid grid-cols-2 gap-3", d.metrics.perplexity != null && "sm:grid-cols-4")}>
+          {d.metrics.perplexity != null && (
+            <>
+              <Metric label="Perplexity" value={d.metrics.perplexity} help="How predictable the text is to GPT-2 (lower = more predictable). AI text is often more predictable." />
+              <Metric label="Burstiness" value={d.metrics.burstiness} help="Standard deviation of sentence perplexity. Human writing usually varies more from sentence to sentence." />
+            </>
+          )}
           <Metric label="Tokens scored" value={d.metrics.tokensScored} />
           <Metric label="Analysis time" value={`${(d.elapsedMs / 1000).toFixed(1)}s`} />
         </dl>
@@ -124,7 +123,7 @@ function Report({ d }) {
             <div className="space-y-4 border-t border-slate-100 px-4 py-4 text-sm animate-fade-in">
               <div className="grid gap-3 sm:grid-cols-2">
                 <ModelCard title="Detector" model={d.models.detector} />
-                <ModelCard title="Perplexity" model={d.models.perplexity} />
+                {d.models.perplexity && <ModelCard title="Perplexity" model={d.models.perplexity} />}
               </div>
               <div className="overflow-x-auto">
                 <table className="w-full text-left text-xs">

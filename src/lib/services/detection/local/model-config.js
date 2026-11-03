@@ -14,7 +14,9 @@ export const DETECTOR_MODEL = {
 
 export const PERPLEXITY_MODEL = {
   id: process.env.HF_PERPLEXITY_MODEL || "Xenova/gpt2",
-  dtype: process.env.HF_PERPLEXITY_DTYPE || "fp32",
+  // fp32 is 500 MB. Vercel's /tmp holds only 512 MB in total, so there we use
+  // the 281 MB int8 build to leave room for the detector model as well.
+  dtype: process.env.HF_PERPLEXITY_DTYPE || (process.env.VERCEL ? "int8" : "fp32"),
   name: "GPT-2 (124M)",
   url: "https://huggingface.co/openai-community/gpt2",
   bosTokenId: 50256,
