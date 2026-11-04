@@ -167,7 +167,7 @@ export default function ComparisonPanel({ session, setSession, loading, onRegene
           </>
         )}
       </Card>
-      {current.recheck && <RecheckCard recheck={current.recheck} pipeline={current.pipeline} model={current.model} />}
+      {current.recheck && <RecheckCard recheck={current.recheck} pipeline={current.pipeline} model={current.model} text={current.text} scope={current.scope} />}
     </div>
   );
 }

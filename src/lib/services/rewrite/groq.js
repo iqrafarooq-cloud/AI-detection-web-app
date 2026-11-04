@@ -30,14 +30,14 @@ export const groqProvider = {
   modelName: (cfg) => cfg.groqModel,
   maxChunkChars: (cfg) => cfg.chunkChars || DEFAULT_CHUNK_CHARS,
 
-  async generate({ system, user }, cfg) {
+  async generate({ system, user, temperature = 0.5 }, cfg) {
     const groq = getClient(cfg);
     const isReasoningModel = /gpt-oss|qwen3/i.test(cfg.groqModel);
     let completion;
     try {
       completion = await groq.chat.completions.create({
         model: cfg.groqModel,
-        temperature: 0.5,
+        temperature,
         max_completion_tokens: groqMaxTokens(user),
         // Reasoning models: keep thinking short and out of the returned text.
         ...(isReasoningModel ? { reasoning_effort: /gpt-oss/i.test(cfg.groqModel) ? "low" : undefined, include_reasoning: false } : {}),

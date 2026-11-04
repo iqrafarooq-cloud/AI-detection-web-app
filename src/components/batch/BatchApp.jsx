@@ -3,7 +3,7 @@
 import { Fragment, useEffect, useMemo, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import { ChevronDown, Download, FileStack, FileUp, Play, ScanSearch, Square, Trash2, X } from "lucide-react";
-import DetectionSummary from "@/components/detector/DetectionSummary";
+import DetectionSummary, { CLASSIFICATIONS } from "@/components/detector/DetectionSummary";
 import { Alert, Badge, Button, Card, EmptyState, Spinner, cx } from "@/components/ui";
 import { ApiError, postForm, postJson } from "@/lib/client/api";
 import { useStatus } from "@/lib/client/useStatus";
@@ -19,13 +19,6 @@ const ACCEPT = EXTENSIONS.map((e) => `.${e}`).join(",");
 const RATE_LIMIT_WAIT_MS = 20_000;
 const RATE_LIMIT_RETRIES = 3;
 
-const VERDICT = {
-  likely_ai: { label: "Likely AI", tone: "red" },
-  likely_human: { label: "Likely human", tone: "green" },
-  mixed: { label: "Mixed", tone: "violet" },
-  uncertain: { label: "Uncertain", tone: "amber" },
-};
-const BAR = { likely_ai: "bg-red-600", likely_human: "bg-emerald-600", mixed: "bg-violet-600", uncertain: "bg-amber-600" };
 const SKIPPED = {
   too_short: "Too short",
   not_configured: "No detector",
@@ -167,7 +160,7 @@ export default function BatchApp() {
   }
 
   function exportCsv() {
-    const header = ["File", "Words", "Status", "Verdict", "AI likelihood (%)", "Confidence", "Note"];
+    const header = ["File", "Words", "Status", "Verdict", "AI-generated (%)", "Human-written (%)", "Confidence", "Note"];
     const rows = items.map((it) => {
       const d = it.detection;
       const ok = d?.status === "ok";
@@ -175,8 +168,9 @@ export default function BatchApp() {
         it.name,
         it.words ?? "",
         STEP_LABEL[it.step],
-        ok ? VERDICT[d.verdict]?.label ?? d.verdict : SKIPPED[d?.status] ?? "",
-        ok ? (d.scores.ai * 100).toFixed(1) : "",
+        ok ? CLASSIFICATIONS[d.classification]?.label ?? d.classification : SKIPPED[d?.status] ?? "",
+        ok ? d.percentages.ai : "",
+        ok ? d.percentages.human : "",
         ok ? d.confidence ?? "" : "",
         it.error || (!ok && d?.message) || "",
       ];
@@ -197,8 +191,8 @@ export default function BatchApp() {
     return {
       finished: items.filter((it) => ["done", "error"].includes(it.step)).length,
       scored: scored.length,
-      likelyAi: scored.filter((it) => it.detection.verdict === "likely_ai").length,
-      avg: scored.length ? scored.reduce((s, it) => s + it.detection.scores.ai, 0) / scored.length : null,
+      aiWritten: scored.filter((it) => it.detection.classification === "ai").length,
+      avg: scored.length ? scored.reduce((s, it) => s + it.detection.probabilities.ai, 0) / scored.length : null,
     };
   }, [items]);
 
@@ -279,7 +273,7 @@ export default function BatchApp() {
                   <span className="font-semibold text-slate-900">{items.length}</span> file{items.length === 1 ? "" : "s"}
                   {stats.scored > 0 && (
                     <>
-                      {" "}· {stats.likelyAi} likely AI · average AI likelihood <span className="font-semibold text-slate-900">{Math.round(stats.avg * 100)}%</span>
+                      {" "}· {stats.aiWritten} likely AI · average AI likelihood <span className="font-semibold text-slate-900">{Math.round(stats.avg * 100)}%</span>
                     </>
                   )}
                 </>
@@ -315,7 +309,7 @@ export default function BatchApp() {
                   <th scope="col" className="px-4 py-2.5">File</th>
                   <th scope="col" className="px-4 py-2.5 text-right">Words</th>
                   <th scope="col" className="px-4 py-2.5">Result</th>
-                  <th scope="col" className="w-48 px-4 py-2.5">AI likelihood</th>
+                  <th scope="col" className="w-48 px-4 py-2.5">AI probability</th>
                   <th scope="col" className="w-24 px-4 py-2.5"><span className="sr-only">Actions</span></th>
                 </tr>
               </thead>
@@ -323,6 +317,7 @@ export default function BatchApp() {
                 {items.map((it) => {
                   const d = it.detection;
                   const ok = d?.status === "ok";
+                  const c = ok ? CLASSIFICATIONS[d.classification] : null;
                   const open = expanded === it.id;
                   return (
                     <Fragment key={it.id}>
@@ -334,7 +329,7 @@ export default function BatchApp() {
                         <td className="px-4 py-3 text-right tabular-nums text-slate-700">{it.words?.toLocaleString() ?? "-"}</td>
                         <td className="px-4 py-3">
                           {it.step === "done" ? (
-                            ok ? <Badge tone={VERDICT[d.verdict]?.tone ?? "neutral"}>{VERDICT[d.verdict]?.label ?? d.verdict}</Badge> : <Badge tone="amber">{SKIPPED[d?.status] ?? "No score"}</Badge>
+                            ok ? <Badge tone={c.tone}>{c.label}</Badge> : <Badge tone="amber">{SKIPPED[d?.status] ?? "No score"}</Badge>
                           ) : it.step === "error" ? (
                             <span className="text-xs text-red-600">{it.error}</span>
                           ) : (
@@ -349,11 +344,11 @@ export default function BatchApp() {
                             <div className="flex items-center gap-2">
                               <div className="h-2 flex-1 overflow-hidden rounded-full bg-slate-100" aria-hidden>
                                 <div
-                                  className={cx("h-full rounded-full", BAR[d.verdict] ?? "bg-amber-600")}
-                                  style={{ width: `${Math.max(2, d.scores.ai * 100)}%` }}
+                                  className={cx("h-full rounded-full", c.bar)}
+                                  style={{ width: `${Math.max(2, d.percentages.ai)}%` }}
                                 />
                               </div>
-                              <span className="w-10 text-right text-xs font-semibold tabular-nums text-slate-900">{Math.round(d.scores.ai * 100)}%</span>
+                              <span className="w-10 text-right text-xs font-semibold tabular-nums text-slate-900">{d.percentages.ai}%</span>
                             </div>
                           ) : (
                             <span className="text-xs text-slate-400">-</span>
@@ -385,15 +380,17 @@ export default function BatchApp() {
                           </div>
                         </td>
                       </tr>
-                      {open && (
+                      {open && d && (
                         <tr>
                           <td colSpan={5} className="bg-slate-50/60 px-4 pb-5 pt-1">
                             <DetectionSummary detection={d} disclaimer={it.disclaimer} />
-                            <div className="mt-3 flex justify-end">
-                              <Button variant="secondary" size="sm" onClick={() => openInDetector(it)}>
-                                <ScanSearch className="size-3.5" aria-hidden /> Open in Detector for sentence highlights
-                              </Button>
-                            </div>
+                            {it.text && (
+                              <div className="mt-3 flex justify-end">
+                                <Button variant="secondary" size="sm" onClick={() => openInDetector(it)}>
+                                  <ScanSearch className="size-3.5" aria-hidden /> Open in Detector for passage highlights
+                                </Button>
+                              </div>
+                            )}
                           </td>
                         </tr>
                       )}

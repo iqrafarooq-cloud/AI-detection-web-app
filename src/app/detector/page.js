@@ -12,7 +12,7 @@ export default function DetectorPage() {
       <PageHeader
         eyebrow="AI Text Detector"
         title="Detect AI-generated text"
-        description="Get an AI probability computed by an open-source detector, see which sentences drive it, and review perplexity, burstiness and writing-pattern signals - every number explained."
+        description="Get a calibrated AI probability from an open-source detector, see which passages drive it, and review writing-pattern signals - every number explained."
       />
       <DetectorApp />
     </div>

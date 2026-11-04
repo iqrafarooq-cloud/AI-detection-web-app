@@ -18,7 +18,7 @@ export default function PrivacyPage() {
 
       <h2>Text you submit</h2>
       <p>
-        <strong>AI detection</strong> runs on our own server with open-source models (a RoBERTa detector and GPT-2), so text you analyse is not sent to any third party. If the site operator switches to a commercial detector (Sapling or GPTZero), text is sent to that provider instead. <strong>Writing improvement</strong> sends your text over an encrypted connection to a language-model provider (Groq or Anthropic), which processes it under its own terms and privacy policy. Detectly does not keep a copy once the response is returned.
+        <strong>AI detection</strong> runs on our own server with an open-source model (a RoBERTa-based detector), so text you analyse is not sent to any third party. If the site operator switches to a commercial detector (Sapling or GPTZero), text is sent to that provider instead. <strong>Writing improvement</strong> sends your text over an encrypted connection to a language-model provider (Groq or Anthropic), which processes it under its own terms and privacy policy. Detectly does not keep a copy once the response is returned.
       </p>
       <p>Uploaded PDF, Word and text files are read in memory to extract their text and are never written to disk or storage. Images (PNG, JPG, WebP) are read with OCR directly in your browser, so they never leave your device. The OCR engine itself is downloaded from a public CDN (jsDelivr) the first time you use it.</p>
 

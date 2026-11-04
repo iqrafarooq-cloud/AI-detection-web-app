@@ -8,9 +8,6 @@ function int(name, fallback) {
 export const config = {
   detection: {
     provider: (process.env.DETECTION_PROVIDER || "local").toLowerCase(),
-    saplingKey: process.env.SAPLING_API_KEY || "",
-    gptzeroKey: process.env.GPTZERO_API_KEY || "",
-    timeoutMs: int("DETECTION_TIMEOUT_MS", 30_000),
   },
   rewrite: {
     provider: (process.env.REWRITE_PROVIDER || "auto").toLowerCase(),

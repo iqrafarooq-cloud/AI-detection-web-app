@@ -14,7 +14,7 @@ export default function AboutPage() {
       <p>The AI Text Detector combines two clearly separated parts:</p>
       <ul>
         <li>
-          <strong>AI-detection estimate.</strong> By default, an open-source RoBERTa detector trained on the RAID benchmark runs on our own server, together with GPT-2 for perplexity and burstiness. The site operator can switch to a commercial provider (Sapling or GPTZero) instead. Either way, we show the model&apos;s own scores and explain exactly how they were derived. See <a href="/how-it-works">How it works</a>.
+          <strong>AI-detection estimate.</strong> By default, an open-source RoBERTa-based detector runs on our own server, and its scores are calibrated on labeled human and AI texts so the percentages mean what they say. When the evidence is weak, we answer Inconclusive. The site operator can switch to a commercial provider (Sapling or GPTZero) instead, whose scores are shown as reported. Either way, we explain exactly how the result was derived. See <a href="/how-it-works">How it works</a>.
         </li>
         <li>
           <strong>Writing-pattern analysis.</strong> Transparent rules computed by Detectly: formulaic stock phrases, repeated sentence openings, repeated phrasing, very long sentences, sentence-rhythm variation and vocabulary variety. These describe style. They are not an AI detector.

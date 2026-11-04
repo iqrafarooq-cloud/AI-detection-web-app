@@ -1,218 +1,176 @@
 import "server-only";
-import { DETECTOR_MODEL, PERPLEXITY_MODEL, getDetector, getLanguageModel } from "./models";
+import { DETECTOR_MODEL, getDetector } from "./models";
+import { CALIBRATION } from "./model-config";
+import { calibrate, confidenceFor, contentShares, verdictFor } from "./calibration";
+import { normalizeForScoring, styleStats } from "./features";
 import { countWords, splitSentences } from "@/lib/text/stats";
+import { AppError } from "@/lib/server/http";
 
-// ---------------------------------------------------------------------------
-// Thresholds. All are documented on the "How it works" page.
-// The model card states it is optimised for a 0.5 decision threshold.
-// ---------------------------------------------------------------------------
-export const METHOD = { chunkTokens: 256, sentenceWindow: 2 };
+// One model pass per text. The text is split into groups of consecutive whole
+// sentences of up to GROUP_TOKENS tokens. Each group is scored once by the
+// classifier; the same scores give
+//   - the AI / Human share of the text and the sentence highlights (each group
+//     calibrated on its own and labeled AI or Human; every sentence in it
+//     shares that label), and
+//   - the confidence (token-weighted mean of the group scores, then the
+//     document calibration).
+// Single sentences carry too little evidence to be scored alone, so a group
+// of a few sentences (up to GROUP_TOKENS) is the smallest unit judged.
+export const GROUP_TOKENS = 256;
+// Speed: the model costs ~10 ms per token on a typical CPU. Texts longer than this
+// budget are scored on evenly spaced groups that fit in it (the rest is shown
+// as not analyzed), so a result arrives in seconds whatever the length.
+export const MAX_SCORED_TOKENS = Number(process.env.DETECTION_MAX_TOKENS) > 0 ? Number(process.env.DETECTION_MAX_TOKENS) : 768;
+const MAX_SENTENCES = 3000;
 
-export const THRESHOLDS = {
-  decision: 0.5,
-  uncertainLow: 0.35,
-  uncertainHigh: 0.65,
-  sentenceFlag: 0.5,
-  mixedHigh: 0.8,
-  mixedLow: 0.2,
-};
-
-const BATCH = 8;
-const MAX_SENTENCES = 200;
-// Chunk size and sentence window were chosen by measurement (see How it works):
-// 256-token chunks localise AI passages inside mixed documents far better than
-// full 512-token windows, and ±2 sentences of context avoids the false flags
-// that very short inputs cause.
-const CHUNK_TOKENS = 256;
-const SENTENCE_WINDOW = 2;
-
-function softmaxAi(logitsRow) {
-  // Numerically stable softmax over the logits row; returns P(AI).
-  const max = Math.max(...logitsRow);
-  const exps = logitsRow.map((l) => Math.exp(l - max));
-  const sum = exps.reduce((a, b) => a + b, 0);
-  return exps[DETECTOR_MODEL.aiLabelIndex] / sum;
-}
-
-/** Runs the classifier on a list of texts and returns P(AI) and raw logits for each. */
-async function classify(texts) {
-  const { tokenizer, model } = await getDetector();
-  const results = [];
-  for (let i = 0; i < texts.length; i += BATCH) {
-    const batch = texts.slice(i, i + BATCH);
-    const inputs = await tokenizer(batch, { padding: true, truncation: true, max_length: DETECTOR_MODEL.maxTokens });
-    const { logits } = await model(inputs);
-    const [rows, cols] = logits.dims;
-    const data = logits.data;
-    for (let r = 0; r < rows; r++) {
-      const row = Array.from(data.slice(r * cols, (r + 1) * cols), Number);
-      results.push({ aiProbability: softmaxAi(row), logits: row });
-    }
-  }
-  return results;
-}
-
-/**
- * Packs consecutive sentences into chunks that fit the model's 512-token window
- * (with a safety margin), so long documents are scored completely instead of
- * being silently truncated.
- */
-async function buildChunks(sentences) {
+/** Packs consecutive sentences into groups that fit GROUP_TOKENS. */
+async function buildGroups(text) {
   const { tokenizer } = await getDetector();
-  const limit = Math.min(CHUNK_TOKENS, DETECTOR_MODEL.maxTokens - 32);
-  const chunks = [];
-  let current = { indices: [], tokens: 0 };
-  for (let i = 0; i < sentences.length; i++) {
-    const n = tokenizer.encode(sentences[i].text, { add_special_tokens: false }).length;
-    if (current.indices.length && current.tokens + n > limit) {
-      chunks.push(current);
-      current = { indices: [], tokens: 0 };
+  const sentences = splitSentences(text).slice(0, MAX_SENTENCES);
+  const groups = [];
+  let current = null;
+  for (const s of sentences) {
+    const n = tokenizer.encode(s.text, { add_special_tokens: false }).length;
+    if (current && current.tokens + n > GROUP_TOKENS) {
+      groups.push(current);
+      current = null;
     }
-    current.indices.push(i);
-    current.tokens += n;
+    current ??= { start: s.start, end: s.end, tokens: 0, sentences: [] };
+    current.sentences.push({ start: s.start, end: s.end, words: countWords(s.text) });
+    current.end = s.end;
+    current.tokens += Math.min(n, DETECTOR_MODEL.maxTokens - 2);
   }
-  if (current.indices.length) chunks.push(current);
-  return chunks.map((c) => ({ ...c, text: c.indices.map((i) => sentences[i].text).join(" ") }));
+  if (current) groups.push(current);
+  return groups.map((g) => {
+    const groupText = text.slice(g.start, g.end).replace(/\s*\n+\s*/g, " ");
+    return { ...g, text: groupText, words: g.sentences.reduce((a, s) => a + s.words, 0) };
+  });
 }
 
-/** Per-sentence perplexity under GPT-2: exp(mean negative log-likelihood of each token). */
-async function sentencePerplexities(sentences) {
-  const { tokenizer, model, Tensor } = await getLanguageModel();
+/** Indices of the groups to score: all of them, or an evenly spaced, deterministic subset within the token budget. */
+export function selectGroups(groups, budget) {
+  const total = groups.reduce((a, g) => a + g.tokens, 0);
+  if (total <= budget) return groups.map((_, i) => i);
+  const avg = total / groups.length;
+  const m = Math.max(1, Math.min(groups.length, Math.floor(budget / avg)));
+  const picked = new Set();
+  for (let i = 0; i < m; i++) picked.add(Math.floor(((i + 0.5) * groups.length) / m));
+  return [...picked].sort((a, b) => a - b);
+}
+
+/** The classifier's logit margin (AI minus human) for each text, one at a time (faster than padded batches on CPU). */
+async function modelMargins(texts) {
+  const { tokenizer, model } = await getDetector();
   const out = [];
-  for (const s of sentences) {
-    const ids = [PERPLEXITY_MODEL.bosTokenId, ...tokenizer.encode(s.text, { add_special_tokens: false })].slice(0, PERPLEXITY_MODEL.maxTokens + 1);
-    if (ids.length < 3) {
-      out.push(null);
-      continue;
-    }
-    const T = ids.length;
-    const input_ids = new Tensor("int64", BigInt64Array.from(ids.map(BigInt)), [1, T]);
-    const attention_mask = new Tensor("int64", new BigInt64Array(T).fill(1n), [1, T]);
-    const { logits } = await model({ input_ids, attention_mask });
-    const V = logits.dims[2];
-    const L = logits.data;
-    let nll = 0;
-    for (let t = 0; t < T - 1; t++) {
-      const base = t * V;
-      let max = -Infinity;
-      for (let v = 0; v < V; v++) if (L[base + v] > max) max = L[base + v];
-      let sum = 0;
-      for (let v = 0; v < V; v++) sum += Math.exp(L[base + v] - max);
-      nll -= L[base + ids[t + 1]] - max - Math.log(sum);
-    }
-    out.push({ perplexity: Math.exp(nll / (T - 1)), tokens: T - 1, nll });
+  for (const t of texts) {
+    const { logits } = await model(await tokenizer(t, { truncation: true, max_length: DETECTOR_MODEL.maxTokens }));
+    const row = Array.from(logits.data, Number);
+    // Logit margin of AI over human: the single logit of a sigmoid head, or the
+    // difference of the two logits of a softmax head.
+    out.push(DETECTOR_MODEL.head === "sigmoid" ? row[0] : row[DETECTOR_MODEL.aiLabelIndex] - row[1 - DETECTOR_MODEL.aiLabelIndex]);
   }
   return out;
 }
 
-function round(n, d = 4) {
-  return n === null || n === undefined || !Number.isFinite(n) ? null : Math.round(n * 10 ** d) / 10 ** d;
+/**
+ * Everything the scoring layer needs for a document, from one model pass.
+ * Used by the pipeline and by the calibration fit in scripts/eval, so both
+ * always score text the same way.
+ */
+export async function rawScores(input, { budget = MAX_SCORED_TOKENS } = {}) {
+  const text = normalizeForScoring(input);
+  const groups = await buildGroups(text);
+  const selected = selectGroups(groups, budget);
+  const margins = await modelMargins(selected.map((i) => groups[i].text));
+  const byIndex = new Map(selected.map((i, k) => [i, margins[k]]));
+  const scored = selected.map((i) => groups[i]);
+  const scoredTokens = scored.reduce((a, g) => a + g.tokens, 0) || 1;
+  const margin = scored.reduce((a, g, k) => a + margins[k] * (g.tokens / scoredTokens), 0);
+  return {
+    margin,
+    words: scored.reduce((a, g) => a + g.words, 0),
+    totalWords: countWords(text),
+    style: styleStats(text),
+    groups: groups.map((g, i) => ({ ...g, margin: byIndex.has(i) ? byIndex.get(i) : null })),
+  };
 }
 
-/** Overall document score only - used by the humanizer re-check. */
+function requireCalibration() {
+  if (!CALIBRATION) {
+    // Never report uncalibrated numbers as probabilities.
+    throw new AppError(
+      "not_calibrated",
+      "The detection model has not been calibrated on this server, so no reliable probability can be given. The operator needs to run the calibration script.",
+      503
+    );
+  }
+  return CALIBRATION;
+}
+
+/** Calibrated document P(AI) only - used by the humanizer re-check. */
 export async function scoreDocument(text) {
-  const sentences = splitSentences(text);
-  const chunks = await buildChunks(sentences);
-  const scored = await classify(chunks.map((c) => c.text));
-  const totalTokens = chunks.reduce((a, c) => a + c.tokens, 0) || 1;
-  return scored.reduce((a, r, i) => a + r.aiProbability * (chunks[i].tokens / totalTokens), 0);
+  const { params } = requireCalibration();
+  return calibrate(await rawScores(text), params);
 }
 
-/** Full report: document probability, sentence scores, AI share, perplexity and burstiness. */
+const VERDICT_TEXT = {
+  ai: "Most of the text has word-sequence patterns the model associates with AI-generated writing.",
+  human: "Most of the text has word-sequence patterns the model associates with human writing.",
+};
+
+function summaryFor(classification, content) {
+  const parts = [VERDICT_TEXT[classification]];
+  if (content.ai >= 15 && content.human >= 15) {
+    parts.push("Some sentence groups read as AI-generated while others read as human-written, so the text may combine both or be AI-edited.");
+  }
+  parts.push("These are statistical estimates, not proof of authorship.");
+  return parts.join(" ");
+}
+
+/** Full result: verdict, AI / Human share of the text, confidence and sentence-level labels. */
 export async function detectLocal(text) {
   const started = Date.now();
-  const sentences = splitSentences(text);
-  const analysed = sentences.slice(0, MAX_SENTENCES);
+  const { params, groups: groupCal, fittedAt, samples } = requireCalibration();
+  const scores = await rawScores(text);
 
-  // 1) Document-level probability: token-weighted mean over 512-token chunks.
-  const chunks = await buildChunks(sentences);
-  const chunkScores = await classify(chunks.map((c) => c.text));
-  const totalTokens = chunks.reduce((a, c) => a + c.tokens, 0) || 1;
-  const ai = chunkScores.reduce((a, r, i) => a + r.aiProbability * (chunks[i].tokens / totalTokens), 0);
-
-  // 2) Sentence-level probability: each sentence is scored together with its
-  //    neighbours, because single sentences are too short for reliable scores.
-  //    A sentence is only flagged when its chunk also reads as AI, so sentence
-  //    highlights never contradict the chunk-level result.
-  const chunkOf = [];
-  chunks.forEach((c, ci) => c.indices.forEach((i) => (chunkOf[i] = ci)));
-  const windows = analysed.map((_, i) =>
-    analysed
-      .slice(Math.max(0, i - SENTENCE_WINDOW), i + SENTENCE_WINDOW + 1)
-      .map((s) => s.text)
-      .join(" ")
-  );
-  const windowScores = await classify(windows);
-
-  // 3) Perplexity + burstiness under GPT-2. These are supporting metrics only:
-  //    if GPT-2 can't be loaded (e.g. not enough disk on the host), the AI
-  //    score above is still valid, so we return it without these metrics.
-  let ppl;
-  try {
-    ppl = await sentencePerplexities(analysed);
-  } catch (err) {
-    console.error("[detector] perplexity model unavailable, returning score without it:", err);
-    ppl = null;
-  }
-  const hasPpl = Boolean(ppl);
-  ppl ??= [];
-  const valid = ppl.filter(Boolean);
-  const totalNll = valid.reduce((a, p) => a + p.nll, 0);
-  const totalPplTokens = valid.reduce((a, p) => a + p.tokens, 0);
-  const pplValues = valid.map((p) => p.perplexity);
-  const meanPpl = pplValues.reduce((a, b) => a + b, 0) / (pplValues.length || 1);
-  const sdPpl = Math.sqrt(pplValues.reduce((a, b) => a + (b - meanPpl) ** 2, 0) / (pplValues.length || 1));
-
-  const sentenceResults = analysed.map((s, i) => ({
-    text: s.text,
-    start: s.start,
-    end: s.end,
-    aiProbability: round(windowScores[i].aiProbability),
-    chunkAiProbability: round(chunkScores[chunkOf[i]].aiProbability),
-    flagged: chunkScores[chunkOf[i]].aiProbability >= THRESHOLDS.decision && windowScores[i].aiProbability >= THRESHOLDS.sentenceFlag,
-    perplexity: round(ppl[i]?.perplexity ?? null, 2),
-  }));
-
-  // AI share: fraction of words in flagged sentences.
-  const words = sentenceResults.map((s) => countWords(s.text));
-  const totalWords = words.reduce((a, b) => a + b, 0) || 1;
-  const aiWords = sentenceResults.reduce((a, s, i) => a + (s.flagged ? words[i] : 0), 0);
-  const aiShare = aiWords / totalWords;
-
-  const hi = chunkScores.filter((c) => c.aiProbability >= THRESHOLDS.mixedHigh).length;
-  const lo = chunkScores.filter((c) => c.aiProbability <= THRESHOLDS.mixedLow).length;
-  let verdict;
-  if (hi && lo) verdict = "mixed";
-  else if (ai >= THRESHOLDS.uncertainHigh) verdict = "likely_ai";
-  else if (ai <= THRESHOLDS.uncertainLow) verdict = "likely_human";
-  else verdict = "uncertain";
+  // Each sentence group is labeled AI or Human by its own calibrated probability.
+  const segments = scores.groups.map((g) => {
+    if (g.margin === null) return { start: g.start, end: g.end, words: g.words, sentences: g.sentences.length, aiProbability: null, classification: "not_analyzed" };
+    const p = calibrate({ margin: g.margin, words: g.words }, groupCal.params);
+    return { start: g.start, end: g.end, words: g.words, sentences: g.sentences.length, aiProbability: round(p), classification: verdictFor(p) };
+  });
+  // The headline numbers: share of the analyzed words in AI and in Human groups.
+  const content = contentShares(segments);
+  const classification = content.ai >= 50 ? "ai" : "human";
+  // Confidence: the calibrated probability of the whole text agreeing with the verdict.
+  const pAi = calibrate(scores, params);
+  const sentences = scores.groups.flatMap((g, gi) => g.sentences.map((s) => ({ start: s.start, end: s.end, words: s.words, group: gi, classification: segments[gi].classification })));
+  const analyzed = segments.filter((s) => s.classification !== "not_analyzed");
 
   return {
-    verdict,
-    scores: { ai: round(ai), human: round(1 - ai), mixed: null },
-    confidence: null,
-    aiShare: round(aiShare),
-    sentences: sentenceResults,
-    sentencesTruncated: sentences.length > MAX_SENTENCES,
-    chunks: chunks.map((c, i) => ({
-      tokens: c.tokens,
-      sentences: c.indices.length,
-      aiProbability: round(chunkScores[i].aiProbability),
-      logits: chunkScores[i].logits.map((l) => round(l, 3)),
-    })),
-    metrics: {
-      perplexity: hasPpl ? round(totalPplTokens ? Math.exp(totalNll / totalPplTokens) : null, 2) : null,
-      meanSentencePerplexity: hasPpl ? round(meanPpl, 2) : null,
-      burstiness: hasPpl ? round(sdPpl, 2) : null,
-      burstinessRatio: hasPpl ? round(meanPpl ? sdPpl / meanPpl : null, 3) : null,
-      tokensScored: totalTokens,
+    classification,
+    percentages: content,
+    content,
+    probabilities: { ai: round(pAi), human: round(1 - pAi) },
+    confidence: confidenceFor(classification === "ai" ? pAi : 1 - pAi, scores.words),
+    calibrated: true,
+    explanation: summaryFor(classification, content),
+    segments,
+    sentences,
+    coverage: {
+      totalWords: scores.totalWords,
+      analyzedWords: scores.words,
+      sentences: sentences.length,
+      analyzedSentences: analyzed.reduce((a, s) => a + s.sentences, 0),
+      sampled: analyzed.length < segments.length,
     },
-    models: {
-      detector: { id: DETECTOR_MODEL.id, name: DETECTOR_MODEL.name, url: DETECTOR_MODEL.url, benchmark: DETECTOR_MODEL.benchmark },
-      perplexity: hasPpl ? { id: PERPLEXITY_MODEL.id, name: PERPLEXITY_MODEL.name, url: PERPLEXITY_MODEL.url } : null,
-    },
-    thresholds: THRESHOLDS,
+    model: { id: DETECTOR_MODEL.id, name: DETECTOR_MODEL.name, url: DETECTOR_MODEL.url },
+    calibration: { samples, fittedAt },
     elapsedMs: Date.now() - started,
-    verdictBasis: `The AI probability is the softmax of the detector's output logits, averaged over ${chunks.length} chunk${chunks.length === 1 ? "" : "s"} of up to ${CHUNK_TOKENS} tokens (weighted by length). Verdict: 65% or above "likely AI", 35% or below "likely human", in between "uncertain", and "mixed" when one chunk scores 80% or more and another 20% or less.`,
+    basis: `The text was split into ${segments.length} group${segments.length === 1 ? "" : "s"} of whole sentences (up to ${GROUP_TOKENS} tokens each)${analyzed.length < segments.length ? `; it is long, so ${analyzed.length} evenly spaced groups were scored` : ""}. Each group was scored once by the classifier and calibrated on labeled human and AI texts: 50% or more is AI-generated, below 50% human-written. The AI and Human percentages are the shares of the analyzed words in each kind of group, and the verdict follows the larger share. Confidence is the calibrated probability of the whole text agreeing with the verdict.`,
   };
+}
+
+function round(n, d = 4) {
+  return Number.isFinite(n) ? Math.round(n * 10 ** d) / 10 ** d : null;
 }

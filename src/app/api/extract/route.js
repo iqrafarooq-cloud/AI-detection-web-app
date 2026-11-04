@@ -106,7 +106,7 @@ async function extractPdf(buffer) {
     }
     throw new AppError("parse_failed", "We couldn't read that PDF. Try exporting it again or paste the text instead.");
   }
-  const text = result.text.map((p) => p.trim()).filter(Boolean).join("\n\n");
+  const text = result.text.map((p) => reflowPdfPage(p)).filter(Boolean).join("\n\n");
   if (!text.trim()) {
     throw new AppError(
       "pdf_no_text",
@@ -114,6 +114,19 @@ async function extractPdf(buffer) {
     );
   }
   return { text, meta: { source: "pdf", pages: result.totalPages } };
+}
+
+/**
+ * PDFs store visual lines, not paragraphs. Rejoins lines that were wrapped in
+ * the middle of a sentence (and words hyphenated at a line end) so the text
+ * reaches the detector the same way it would if it had been pasted.
+ */
+function reflowPdfPage(page) {
+  return page
+    .replace(/\r\n?/g, "\n")
+    .replace(/(\p{L})-\n(\p{Ll})/gu, "$1$2")
+    .replace(/([^\n.!?:;"”')\]])\n(?=[\p{Ll}\d(])/gu, "$1 ")
+    .trim();
 }
 
 function fileTooLargeMessage() {

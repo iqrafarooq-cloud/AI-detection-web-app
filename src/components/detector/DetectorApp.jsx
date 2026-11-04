@@ -2,14 +2,14 @@
 
 import { useEffect, useRef, useState } from "react";
 import Link from "next/link";
-import { ScanSearch, ShieldQuestion, PenLine } from "lucide-react";
+import { History, ScanSearch, ShieldQuestion, PenLine, Trash2 } from "lucide-react";
 import TextInputPanel from "@/components/text/TextInputPanel";
-import { Alert, Button, Card, EmptyState, Spinner } from "@/components/ui";
+import { Alert, Badge, Button, Card, EmptyState, Spinner } from "@/components/ui";
 import { postJson } from "@/lib/client/api";
 import { useStatus } from "@/lib/client/useStatus";
 import { usePersistentState } from "@/lib/client/usePersistentState";
 import { DRAFT_KEY, clearSession, loadSession, saveSession } from "@/lib/client/files";
-import DetectionSummary from "./DetectionSummary";
+import DetectionSummary, { CLASSIFICATIONS } from "./DetectionSummary";
 import PatternReport from "./PatternReport";
 import SentenceView from "./SentenceView";
 
@@ -21,6 +21,7 @@ export default function DetectorApp() {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
   const abortRef = useRef(null);
+  const [history, setHistory] = useReportHistory();
   const maxChars = status?.limits?.analyzeMaxChars ?? 50000;
 
   useEffect(() => {
@@ -37,6 +38,7 @@ export default function DetectorApp() {
   }, [setText, setResult, setAnalyzedText]);
 
   async function analyze() {
+    if (loading) return; // one request at a time
     setError("");
     if (!text.trim()) return setError("Please enter or upload some text to analyze.");
     if (text.length > maxChars) return setError(`Text is too long. The limit is ${maxChars.toLocaleString()} characters.`);
@@ -46,8 +48,12 @@ export default function DetectorApp() {
     setLoading(true);
     try {
       const res = await postJson("/api/analyze", { text }, { signal: controller.signal });
+      const analyzed = text.replace(/\r\n/g, "\n");
       setResult(res);
-      setAnalyzedText(text.replace(/\r\n/g, "\n"));
+      setAnalyzedText(analyzed);
+      if (res.detection?.status === "ok") {
+        setHistory((h) => [{ id: `${Date.now()}`, at: new Date().toISOString(), text: analyzed, result: res }, ...h].slice(0, HISTORY_MAX));
+      }
       requestAnimationFrame(() => document.getElementById("results")?.scrollIntoView({ behavior: "smooth", block: "start" }));
     } catch (err) {
       if (err.name !== "AbortError") setError(err.message);
@@ -88,20 +94,16 @@ export default function DetectorApp() {
         />
         <Card className="flex flex-col gap-4 p-5">
           <div>
-            <p className="font-semibold text-slate-900">Analyze text</p>
+            <p className="font-semibold text-slate-900">Detect AI writing</p>
             <p className="mt-1 text-sm leading-relaxed text-slate-500">
-              {status?.detection.configured ? (
-                <>
-                  {status.detection.id === "local" ? "AI detection running on our server (your text is not sent to a third party)" : <>Detection by <span className="font-medium text-slate-700">{status.detection.name}</span></>}, plus writing-pattern analysis. Works on any language (most accurate for English), 40+ words.
-                </>
-              ) : (
-                "Writing-pattern analysis only."
-              )}
+              {!status || status.detection.configured
+                ? "AI detection running on our server (your text is not sent to a third party), plus writing-pattern analysis. Calibrated for English, 20+ words."
+                : "Writing-pattern analysis only."}
             </p>
           </div>
           <Button variant="gradient" size="lg" onClick={analyze} loading={loading} disabled={!text.trim()}>
             {!loading && <ScanSearch className="size-5" aria-hidden />}
-            {loading ? "Analyzing..." : "Analyze Text"}
+            {loading ? "Detecting..." : "Detect AI"}
           </Button>
           <p className="text-xs leading-relaxed text-slate-500">
             Results are statistical estimates, not proof of authorship. Clear, grammatical writing is not a sign of AI on its own.
@@ -116,15 +118,15 @@ export default function DetectorApp() {
           <Card className="flex items-center justify-center gap-3 p-10 text-sm text-slate-600">
             <Spinner />
             <span>
-              Running the detector model, perplexity scoring and pattern analysis...
-              <span className="mt-1 block text-xs text-slate-500">The first analysis after a server restart can take up to a minute while the models load.</span>
+              Running the detection model and pattern analysis...
+              <span className="mt-1 block text-xs text-slate-500">The first detection after a server restart can take up to a minute while the model loads.</span>
             </span>
           </Card>
         )}
         {!loading && !result && (
           <Card>
             <EmptyState icon={ShieldQuestion} title="Your analysis will appear here">
-              Paste text above and select Analyze Text. You&apos;ll see an overall estimate (when a detector is configured), style signals and sentence-level highlights with explanations.
+              Paste text above and select Detect AI. You&apos;ll get a classification with AI and human probabilities, plus style signals and passage-level highlights.
             </EmptyState>
           </Card>
         )}
@@ -151,6 +153,91 @@ export default function DetectorApp() {
           </div>
         )}
       </section>
+
+      {history.length > 0 && (
+        <ReportHistory
+          items={history}
+          onOpen={(item) => {
+            abortRef.current?.abort();
+            setText(item.text);
+            setAnalyzedText(item.text);
+            setResult(item.result);
+            setError("");
+            requestAnimationFrame(() => document.getElementById("results")?.scrollIntoView({ behavior: "smooth", block: "start" }));
+          }}
+          onClear={() => setHistory([])}
+        />
+      )}
     </div>
   );
 }
+
+// Recent reports are kept only in this browser (localStorage), never on the server.
+const HISTORY_KEY = "detectly:report-history";
+const HISTORY_MAX = 10;
+
+function useReportHistory() {
+  const [items, setItems] = useState([]);
+  const loaded = useRef(false);
+  useEffect(() => {
+    if (!loaded.current) {
+      loaded.current = true;
+      try {
+        const stored = JSON.parse(localStorage.getItem(HISTORY_KEY) || "[]");
+        // eslint-disable-next-line react-hooks/set-state-in-effect
+        if (Array.isArray(stored) && stored.length) setItems(stored);
+      } catch {
+        /* storage unavailable or corrupt: start empty */
+      }
+      return;
+    }
+    try {
+      localStorage.setItem(HISTORY_KEY, JSON.stringify(items));
+    } catch {
+      // Quota exceeded: keep the newest half.
+      try {
+        localStorage.setItem(HISTORY_KEY, JSON.stringify(items.slice(0, Math.ceil(items.length / 2))));
+      } catch {
+        /* storage unavailable */
+      }
+    }
+  }, [items]);
+  return [items, setItems];
+}
+
+function ReportHistory({ items, onOpen, onClear }) {
+  return (
+    <Card className="p-6">
+      <div className="flex flex-wrap items-center justify-between gap-3">
+        <h2 className="inline-flex items-center gap-2 text-lg font-semibold text-slate-900">
+          <History className="size-5 text-brand-600" aria-hidden /> Recent reports
+        </h2>
+        <Button variant="secondary" size="sm" onClick={onClear}>
+          <Trash2 className="size-3.5" aria-hidden /> Clear history
+        </Button>
+      </div>
+      <p className="mt-1 text-xs text-slate-500">Saved only in this browser. Nothing is stored on our server.</p>
+      <ul className="mt-4 divide-y divide-slate-100">
+        {items.map((item) => {
+          const d = item.result.detection;
+          const c = CLASSIFICATIONS[d.classification];
+          return (
+            <li key={item.id}>
+              <button type="button" onClick={() => onOpen(item)} className="flex w-full flex-wrap items-center gap-x-3 gap-y-1 rounded-lg px-2 py-3 text-left hover:bg-slate-50">
+                {c && <Badge tone={c.tone}>{c.label}</Badge>}
+                {d.content && (
+                  <span className="text-xs tabular-nums text-slate-600">
+                    AI {d.content.ai}% · Human {d.content.human}%
+                  </span>
+                )}
+                <span className="min-w-0 flex-1 basis-full truncate text-sm text-slate-700 sm:basis-auto">{item.text.slice(0, 120)}</span>
+                <span className="text-xs text-slate-400">{new Date(item.at).toLocaleString()}</span>
+              </button>
+            </li>
+          );
+        })}
+      </ul>
+    </Card>
+  );
+}
+

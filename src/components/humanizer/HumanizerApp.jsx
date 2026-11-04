@@ -74,6 +74,7 @@ export default function HumanizerApp() {
         preservation: res.preservation,
         style: res.controls.style,
         recheck: res.recheck,
+        scope: res.scope,
         pipeline: res.pipeline,
         model: res.provider.model,
       };

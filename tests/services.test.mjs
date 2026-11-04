@@ -1,7 +1,8 @@
 import { test, afterEach } from "node:test";
 import assert from "node:assert/strict";
 import { analyzeText, getDetectionStatus } from "@/lib/services/detection";
-import { saplingProvider, gptzeroProvider } from "@/lib/services/detection/providers";
+import { DETECTION_PROVIDERS } from "@/lib/services/detection/providers";
+import { AppError as ProviderError } from "@/lib/server/http";
 import { improveText } from "@/lib/services/rewrite";
 import { sanitizeControls, DEFAULT_CONTROLS } from "@/lib/services/rewrite/options";
 import { buildRefinePrompt, buildRestructurePrompt } from "@/lib/services/rewrite/prompt";
@@ -26,74 +27,45 @@ function mockFetch(status, body) {
 test("no provider configured: no verdict and no scores are fabricated", async () => {
   const r = await analyzeText(LONG, { provider: "none", timeoutMs: 1000 });
   assert.equal(r.detection.status, "not_configured");
-  assert.equal(r.detection.scores, undefined);
-  assert.equal(r.detection.verdict, undefined);
+  assert.equal(r.detection.probabilities, undefined);
+  assert.equal(r.detection.classification, undefined);
   assert.ok(r.patterns.metrics.words > 0);
   assert.match(r.disclaimer, /probabilistic/);
 });
 
-test("provider selected but missing key counts as not configured", () => {
-  assert.equal(getDetectionStatus({ provider: "sapling", saplingKey: "" }).configured, false);
-  assert.equal(getDetectionStatus({ provider: "sapling", saplingKey: "k" }).configured, true);
+test("there is exactly one detection engine, and unknown providers are not configured", () => {
+  assert.deepEqual(Object.keys(DETECTION_PROVIDERS), ["local"]);
+  assert.equal(getDetectionStatus({ provider: "local" }).configured, true);
+  assert.equal(getDetectionStatus({ provider: "sapling" }).configured, false);
+  assert.equal(getDetectionStatus({ provider: "none" }).configured, false);
 });
 
-test("Sapling scores are passed through unchanged", async () => {
-  const calls = mockFetch(200, {
-    score: 0.91,
-    sentence_scores: [
-      { sentence: "A.", score: 0.95 },
-      { sentence: "B.", score: 0.88 },
-    ],
+test("engine failures surface as errors, never as fake results", async () => {
+  DETECTION_PROVIDERS.fake = fakeProvider(async () => {
+    throw new ProviderError("model_unavailable", "loading", 503);
   });
-  const r = await saplingProvider.detect("hello", { saplingKey: "k", timeoutMs: 1000 });
-  assert.equal(r.scores.ai, 0.91);
-  assert.equal(r.verdict, "likely_ai");
-  assert.equal(r.sentences[1].aiProbability, 0.88);
-  assert.equal(JSON.parse(calls[0].init.body).key, "k");
+  try {
+    const r = await analyzeText(LONG, { provider: "fake" });
+    assert.equal(r.detection.status, "error");
+    assert.equal(r.detection.code, "model_unavailable");
+    assert.equal(r.detection.probabilities, undefined);
+    assert.equal(r.detection.percentages, undefined);
+  } finally {
+    delete DETECTION_PROVIDERS.fake;
+  }
 });
 
-test("Sapling mid-range score is reported as uncertain", async () => {
-  mockFetch(200, { score: 0.5, sentence_scores: [] });
-  const r = await saplingProvider.detect("x", { saplingKey: "k", timeoutMs: 1000 });
-  assert.equal(r.verdict, "uncertain");
-});
-
-test("GPTZero response is normalized", async () => {
-  mockFetch(200, {
-    documents: [
-      {
-        predicted_class: "mixed",
-        confidence_category: "medium",
-        class_probabilities: { ai: 0.4, human: 0.35, mixed: 0.25 },
-        sentences: [{ sentence: "S1", generated_prob: 0.7 }],
-      },
-    ],
-  });
-  const r = await gptzeroProvider.detect("x", { gptzeroKey: "k", timeoutMs: 1000 });
-  assert.equal(r.verdict, "mixed");
-  assert.equal(r.confidence, "medium");
-  assert.deepEqual(r.scores, { ai: 0.4, human: 0.35, mixed: 0.25 });
-});
-
-test("provider failures surface as errors, never as fake results", async () => {
-  mockFetch(429, { error: "limit" });
-  const r = await analyzeText(LONG, { provider: "sapling", saplingKey: "k", timeoutMs: 1000 });
-  assert.equal(r.detection.status, "error");
-  assert.equal(r.detection.code, "provider_rate_limited");
-  assert.equal(r.detection.scores, undefined);
-
-  globalThis.fetch = async () => {
-    throw new TypeError("fetch failed");
-  };
-  const r2 = await analyzeText(LONG, { provider: "sapling", saplingKey: "k", timeoutMs: 1000 });
-  assert.equal(r2.detection.code, "provider_unreachable");
-});
-
-test("short text is not sent to the detection provider", async () => {
-  const calls = mockFetch(200, { score: 0.1 });
-  const r = await analyzeText("Too short to judge.", { provider: "sapling", saplingKey: "k", timeoutMs: 1000 });
-  assert.equal(r.detection.status, "too_short");
-  assert.equal(calls.length, 0);
+test("text below the minimum is not scored: an explicit too-short result, no number", async () => {
+  let calls = 0;
+  DETECTION_PROVIDERS.fake = { ...fakeProvider(async () => (calls++, fakeResult(0.1))), minWords: 20 };
+  try {
+    const r = await analyzeText("Too short to judge.", { provider: "fake" });
+    assert.equal(r.detection.status, "too_short");
+    assert.equal(r.detection.percentages, undefined);
+    assert.equal(calls, 0);
+  } finally {
+    delete DETECTION_PROVIDERS.fake;
+  }
 });
 
 test("rewrite without a configured provider fails clearly", async () => {
@@ -179,18 +151,69 @@ test("re-check also runs for non-English text", async () => {
   }
 });
 
-test("detection runs for any language and warns when the text is not English", async () => {
-  const { analyzeText } = await import("@/lib/services/detection/index");
+function fakeProvider(detect) {
+  return { id: "fake", name: "Fake", url: "", englishOnly: true, minWords: 5, isConfigured: () => true, detect };
+}
+const fakeResult = (p) => ({
+  classification: p >= 0.5 ? "ai" : "human",
+  probabilities: { ai: p, human: 1 - p },
+  percentages: { ai: Math.round(p * 100), human: 100 - Math.round(p * 100) },
+  confidence: "high",
+  calibrated: true,
+  explanation: "x",
+  segments: [],
+});
+
+test("non-English text keeps its verdict but never gets more than low confidence", async () => {
   const { DETECTION_PROVIDERS } = await import("@/lib/services/detection/providers");
-  const provider = { id: "fake", name: "Fake", url: "", englishOnly: true, minWords: 5, isConfigured: () => true, detect: async () => ({ verdict: "uncertain", scores: { ai: 0.5, human: 0.5 } }) };
-  DETECTION_PROVIDERS.fake = provider;
+  DETECTION_PROVIDERS.fake = fakeProvider(async () => fakeResult(0.97));
   try {
     const es = await analyzeText("El cambio climático es uno de los problemas más urgentes de nuestro tiempo y afecta a los ecosistemas del mundo.", { provider: "fake" });
     assert.equal(es.detection.status, "ok");
-    assert.match(es.detection.languageWarning, /English/);
+    assert.equal(es.detection.classification, "ai");
+    assert.equal(es.detection.confidence, "low");
+    assert.equal(es.detection.percentages.ai, 97);
+    assert.ok(es.detection.warnings.some((w) => w.code === "language"));
+    // English with few function words (a resume) is not mistaken for another language.
     const resume = await analyzeText("Senior Software Engineer Skills JavaScript React Node.js Python AWS Docker Experience Led development microservices architecture Improved performance APIs reduced latency Mentored junior engineers", { provider: "fake" });
-    assert.equal(resume.detection.status, "ok");
-    assert.equal(resume.detection.languageWarning, undefined);
+    assert.equal(resume.detection.classification, "ai");
+    assert.ok(!resume.detection.warnings.some((w) => w.code === "language"));
+    assert.ok(resume.detection.warnings.some((w) => w.code === "short_text"));
+  } finally {
+    delete DETECTION_PROVIDERS.fake;
+  }
+});
+
+test("identical texts submitted at the same time share one detection run", async () => {
+  const { DETECTION_PROVIDERS } = await import("@/lib/services/detection/providers");
+  let calls = 0;
+  DETECTION_PROVIDERS.fake = fakeProvider(async () => {
+    calls++;
+    await new Promise((r) => setTimeout(r, 30));
+    return fakeResult(0.1);
+  });
+  try {
+    const [a, b] = await Promise.all([analyzeText(LONG, { provider: "fake" }), analyzeText(LONG, { provider: "fake" })]);
+    assert.equal(calls, 1);
+    assert.equal(a.detection.classification, "human");
+    assert.equal(b.detection.classification, "human");
+    await analyzeText(LONG, { provider: "fake" });
+    assert.equal(calls, 2, "a finished run is not cached; later requests are scored again");
+  } finally {
+    delete DETECTION_PROVIDERS.fake;
+  }
+});
+
+test("finished results of the cacheable engine are reused for identical text", async () => {
+  let calls = 0;
+  DETECTION_PROVIDERS.fake = { ...fakeProvider(async () => (calls++, fakeResult(0.8))), cacheable: true };
+  try {
+    const text = LONG + " cache-test";
+    const a = await analyzeText(text, { provider: "fake" });
+    const b = await analyzeText(text, { provider: "fake" });
+    assert.equal(calls, 1);
+    assert.deepEqual(b.detection.percentages, a.detection.percentages);
+    assert.equal(b.detection.cached, true);
   } finally {
     delete DETECTION_PROVIDERS.fake;
   }
@@ -214,4 +237,51 @@ test("rate limiter blocks after the limit within a window", () => {
   assert.equal(third.allowed, false);
   assert.ok(third.retryAfterSec > 0);
   assert.equal(rateLimit("other", opts).allowed, true);
+});
+
+test("humanizer keeps human-written sentences exactly and rewrites only AI-labeled groups", async () => {
+  const { groqProvider } = await import("@/lib/services/rewrite/groq");
+  const { rewriteSpans } = await import("@/lib/services/rewrite");
+  const human = "I wrote this part myself last week after the meeting ran long.";
+  const ai = "Furthermore, it is important to note that synergy plays a crucial role.";
+  const text = `${human} ${ai}`;
+  const detection = {
+    status: "ok",
+    classification: "human",
+    content: { ai: 40, human: 60 },
+    segments: [
+      { start: 0, end: human.length, classification: "human", words: 12 },
+      { start: human.length + 1, end: text.length, classification: "ai", words: 12 },
+    ],
+  };
+  assert.deepEqual(rewriteSpans(text, detection), [{ start: human.length + 1, end: text.length }]);
+  assert.deepEqual(rewriteSpans(text, { status: "too_short" }), [{ start: 0, end: text.length }]);
+
+  const seen = [];
+  const original = groqProvider.generate;
+  groqProvider.generate = async ({ user }) => {
+    seen.push(user);
+    return { text: "Teamwork matters here.", model: "fake" };
+  };
+  try {
+    const r = await improveText(text, DEFAULT_CONTROLS, {
+      rewriteCfg: { provider: "groq", groqKey: "k", groqModel: "fake" },
+      detectFn: async () => detection,
+      scoreFn: async (t) => (t === text ? 0.4 : 0.2),
+    });
+    assert.ok(r.improvedText.startsWith(human), "human sentence kept verbatim");
+    assert.ok(r.improvedText.endsWith("Teamwork matters here."));
+    assert.ok(seen.every((u) => !u.includes(human)), "human text never sent to the rewriter");
+    assert.equal(r.scope.selective, true);
+
+    // All human: nothing is rewritten.
+    seen.length = 0;
+    const allHuman = { ...detection, segments: [{ start: 0, end: text.length, classification: "human", words: 24 }] };
+    const r2 = await improveText(text, DEFAULT_CONTROLS, { rewriteCfg: { provider: "groq", groqKey: "k", groqModel: "fake" }, detectFn: async () => allHuman });
+    assert.equal(r2.improvedText, text);
+    assert.equal(r2.scope.unchanged, true);
+    assert.equal(seen.length, 0);
+  } finally {
+    groqProvider.generate = original;
+  }
 });

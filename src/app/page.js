@@ -5,7 +5,7 @@ import { Card } from "@/components/ui";
 
 const FEATURES = [
   { icon: ScanSearch, title: "Transparent analysis", text: "Sentence-level highlights explain exactly why a passage was flagged: formulaic phrases, repetition, uniform rhythm." },
-  { icon: ShieldCheck, title: "Real, explained scores", text: "AI probability comes straight from an open-source RoBERTa detector trained on the RAID benchmark, plus GPT-2 perplexity and burstiness. Every number is explained." },
+  { icon: ShieldCheck, title: "Real, explained scores", text: "AI probability comes from an open-source RoBERTa detector, calibrated on labeled human and AI texts. When the evidence is weak, it says Uncertain instead of guessing. Every number is explained." },
   { icon: PenLine, title: "Natural rewriting", text: "Seven writing styles that improve flow and clarity without typos, tricks or invented facts." },
   { icon: SlidersHorizontal, title: "Fine-grained control", text: "Tune tone, formality, complexity, vocabulary, paragraph length, text length and English level." },
   { icon: GitCompareArrows, title: "Side-by-side compare", text: "Every change highlighted word by word, with undo, redo and one-click restore of your original." },
@@ -31,7 +31,7 @@ const FAQ = [
   },
   {
     q: "Why do I sometimes see no AI percentage?",
-    a: "The detector needs at least 40 words; for shorter text we show no score rather than an unreliable one. It was trained mostly on English, so scores for other languages come with a caution note. Our rule-based writing-pattern analysis still runs. We never make up a number.",
+    a: "The detector needs at least 20 words; for shorter text we show no score rather than an unreliable one. It was trained mostly on English, so scores for other languages come with a caution note. Our rule-based writing-pattern analysis still runs. We never make up a number.",
   },
   {
     q: "Does the Humanizer make AI text undetectable?",
